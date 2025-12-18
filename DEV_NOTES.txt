@@ -299,6 +299,153 @@ FUTURE EXTENSIONS (Day 4+):
 - Recording: MediaRecorder API for meeting recordings
 
 ================================================================================
+DAY 4 – VIDEO & AUDIO (LIVEKIT)
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. LiveKit Server SDK Integration (Backend)
+   - Installed livekit-server-sdk package
+   - Created token generation service
+   - Secure room-based access control
+   - Meeting validation before token generation
+
+2. Token Generation API
+   - POST /api/webrtc/token
+   - Request: { meetingCode, userName }
+   - Response: { token, url }
+   - Validates meeting exists before generating token
+   - Binds token to meetingCode (room) and user identity
+
+3. LiveKit React SDK Integration (Frontend)
+   - Installed @livekit/components-react and livekit-client
+   - Created VideoRoom component
+   - Auto-connects to LiveKit room on mount
+   - Renders video tiles for all participants
+   - Responsive grid layout (1, 2, or 3+ participants)
+
+4. VideoRoom Component Features
+   - Connects to LiveKit using token + URL
+   - Auto joins meeting room
+   - Video tiles for participants
+   - Audio track rendering
+   - Connection state management
+   - Error handling (token failure, connection lost)
+
+5. MeetingRoomPage Integration
+   - Fetches LiveKit token after socket join succeeds
+   - Renders VideoRoom in main content area
+   - Chat and reactions still work independently
+   - Graceful fallback if video connection fails
+
+6. Environment Variables
+   - LIVEKIT_API_KEY: LiveKit API key
+   - LIVEKIT_API_SECRET: LiveKit API secret
+   - LIVEKIT_URL: LiveKit server URL
+
+WHY SFU (SELECTIVE FORWARDING UNIT) IS NEEDED:
+------------------------------------------------
+
+- P2P Limitations: Direct peer-to-peer WebRTC connections don't scale well.
+  With 5+ participants, each peer must send/receive streams from every other
+  peer, consuming massive bandwidth and CPU.
+
+- SFU Solution: LiveKit uses an SFU architecture where:
+  * Each participant sends ONE stream to the server
+  * Server forwards streams to other participants
+  * Reduces bandwidth: O(n) instead of O(n²)
+  * Better performance for large meetings
+
+- LiveKit Benefits:
+  * Production-ready SFU infrastructure
+  * Handles NAT traversal automatically
+  * Built-in scaling and load balancing
+  * Low latency media forwarding
+  * Supports 100+ participants per room
+
+HOW THIS PREPARES FOR DAY 5:
+----------------------------
+
+- Mic/Camera Toggle: Token permissions (canPublish) are already set up.
+  Day 5 will add UI controls to enable/disable tracks.
+
+- Screen Sharing: Room structure supports multiple track sources.
+  Day 5 will add screen share track publishing.
+
+- Recording: LiveKit has built-in recording capabilities.
+  Day 6 will add recording hooks and controls.
+
+WHERE IT LIVES:
+--------------
+
+- Backend LiveKit Service:
+  - Service: backend/src/modules/webrtc/livekit.service.ts
+  - Controller: backend/src/modules/webrtc/webrtc.controller.ts
+  - Routes: backend/src/modules/webrtc/webrtc.routes.ts
+  - Integration: backend/src/routes/index.ts
+
+- Backend Configuration:
+  - Environment: backend/src/config/env.ts
+  - Variables: LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL
+
+- Frontend Video Component:
+  - Component: frontend/src/components/VideoRoom.tsx
+  - API Service: frontend/src/services/livekitApi.ts
+  - Integration: frontend/src/pages/MeetingRoomPage.tsx
+
+- Dependencies:
+  - Backend: livekit-server-sdk (^2.5.4)
+  - Frontend: @livekit/components-react (^2.3.0), livekit-client (^2.5.3)
+
+ARCHITECTURE DECISIONS:
+-----------------------
+
+- Separation of Concerns:
+  * Socket.io: Signaling, chat, reactions (text-based communication)
+  * LiveKit: Video/audio streaming (media communication)
+  * Clean separation allows independent scaling and maintenance
+
+- Token Security:
+  * Tokens are generated server-side only
+  * Meeting validation ensures only valid meetings get tokens
+  * Tokens are scoped to specific room (meetingCode)
+  * Future: JWT auth can be added to token generation
+
+- Room Naming:
+  * Uses meetingCode as room name
+  * Ensures each meeting has isolated video room
+  * Matches Socket.io room architecture
+
+- Error Handling:
+  * Video connection failures don't break chat/reactions
+  * Graceful degradation: users can still communicate via text
+  * Clear error messages for debugging
+
+FUTURE EXTENSIONS (Day 5+):
+---------------------------
+
+- Day 5: Mic/Camera Controls
+  * Toggle audio/video tracks
+  * UI controls for mute/unmute
+  * Visual indicators for muted participants
+
+- Day 5: Screen Sharing
+  * Screen capture track publishing
+  * UI button to start/stop sharing
+  * Grid layout updates for screen shares
+
+- Day 6: Recording
+  * LiveKit recording hooks
+  * Start/stop recording controls
+  * Recording status indicators
+
+- Future: Participant Management
+  * Kick/ban participants (host controls)
+  * Participant list with video/audio status
+  * Raise hand feature
+
+================================================================================
 NOTES FOR FUTURE DEVELOPMENT
 ================================================================================
 

@@ -13,6 +13,8 @@ import {
   onSocketEvent,
   offSocketEvent,
 } from '../services/socket.service';
+import { generateLiveKitToken } from '../services/livekitApi';
+import VideoRoom from '../components/VideoRoom';
 
 interface ChatMessage {
   message: string;
@@ -55,6 +57,12 @@ const MeetingRoomPage = () => {
   const [messageInput, setMessageInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const reactionsEndRef = useRef<HTMLDivElement>(null);
+  
+  // LiveKit state
+  const [liveKitToken, setLiveKitToken] = useState<string | null>(null);
+  const [liveKitUrl, setLiveKitUrl] = useState<string | null>(null);
+  const [liveKitError, setLiveKitError] = useState<string | null>(null);
+  const [isLoadingToken, setIsLoadingToken] = useState(false);
 
   // Scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -115,8 +123,27 @@ const MeetingRoomPage = () => {
     });
 
     // Handle joined meeting confirmation
-    const handleJoinedMeeting = () => {
+    const handleJoinedMeeting = async () => {
       console.log('Successfully joined meeting');
+      
+      // Fetch LiveKit token after socket join succeeds
+      if (meetingCode && userName) {
+        setIsLoadingToken(true);
+        setLiveKitError(null);
+        try {
+          const tokenData = await generateLiveKitToken({
+            meetingCode,
+            userName,
+          });
+          setLiveKitToken(tokenData.token);
+          setLiveKitUrl(tokenData.url);
+        } catch (err) {
+          console.error('Failed to fetch LiveKit token:', err);
+          setLiveKitError(err instanceof Error ? err.message : 'Failed to connect to video room');
+        } finally {
+          setIsLoadingToken(false);
+        }
+      }
     };
 
     // Handle user joined event
@@ -269,14 +296,44 @@ const MeetingRoomPage = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Main content area - will be used for video in Day 4 */}
+        {/* Main content area - Video Room */}
         <div className="lg:col-span-2">
           <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-6">
-            <div className="flex h-96 items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-              <div className="text-center text-sm text-slate-400">
-                <p className="mb-2">Video interface will be implemented in Day 4</p>
-                <p>WebRTC, video, audio, and screen sharing features coming soon.</p>
-              </div>
+            <div className="h-96 w-full">
+              {isLoadingToken ? (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+                  <div className="text-center text-sm text-slate-400">
+                    <p>Connecting to video room...</p>
+                  </div>
+                </div>
+              ) : liveKitError ? (
+                <div className="flex h-full items-center justify-center rounded-lg border border-red-700 bg-red-900/20">
+                  <div className="text-center text-sm text-red-300">
+                    <p className="font-medium">Video Connection Error</p>
+                    <p className="mt-1 text-xs">{liveKitError}</p>
+                    <p className="mt-2 text-xs text-slate-400">
+                      Chat and reactions are still available
+                    </p>
+                  </div>
+                </div>
+              ) : liveKitToken && liveKitUrl ? (
+                <VideoRoom
+                  token={liveKitToken}
+                  serverUrl={liveKitUrl}
+                  meetingCode={meetingCode!}
+                  userName={userName}
+                  onDisconnect={() => {
+                    setLiveKitToken(null);
+                    setLiveKitUrl(null);
+                  }}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+                  <div className="text-center text-sm text-slate-400">
+                    <p>Preparing video room...</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
