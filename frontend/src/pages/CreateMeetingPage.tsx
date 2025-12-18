@@ -1,8 +1,13 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppDispatch } from '../store/hooks';
+import { setMeetingAsHost } from '../store/slices/meetingSlice';
 import { createMeeting } from '../services/meetingApi';
 import CopyLink from '../components/CopyLink';
 
 const CreateMeetingPage = () => {
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [password, setPassword] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -29,6 +34,13 @@ const CreateMeetingPage = () => {
         meetingCode: response.meetingCode,
         joinUrl: response.joinUrl,
       });
+      
+      // Store meeting info in Redux as host
+      dispatch(setMeetingAsHost({
+        meeting: response.meeting,
+        meetingCode: response.meetingCode,
+        joinUrl: response.joinUrl,
+      }));
       
       // Reset form
       setTitle('');
@@ -66,12 +78,12 @@ const CreateMeetingPage = () => {
             >
               Create Another Meeting
             </button>
-            <a
-              href={meetingData.joinUrl}
+            <button
+              onClick={() => navigate(meetingData.joinUrl.replace(window.location.origin, ''))}
               className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-900"
             >
               Join Meeting
-            </a>
+            </button>
           </div>
         </div>
       ) : (

@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { clearMeeting, setMeetingAsParticipant } from '../store/slices/meetingSlice';
 import { getMeetingByCode } from '../services/meetingApi';
 
 const MeetingPage = () => {
   const { meetingCode } = useParams<{ meetingCode: string }>();
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const { isHost, meetingCode: storedMeetingCode } = useAppSelector((state) => state.meeting);
   const [meeting, setMeeting] = useState<{
     id: string;
     title: string;
@@ -31,6 +36,20 @@ const MeetingPage = () => {
           scheduledAt: data.scheduledAt,
           createdAt: data.createdAt,
         });
+
+        // If meeting is not in Redux state, set it as participant (user joined via direct URL)
+        if (!storedMeetingCode || storedMeetingCode !== meetingCode) {
+          dispatch(setMeetingAsParticipant({
+            meeting: {
+              id: data.id,
+              title: data.title,
+              meetingCode: data.meetingCode,
+              scheduledAt: data.scheduledAt,
+              createdAt: data.createdAt,
+            },
+            meetingCode: data.meetingCode,
+          }));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load meeting');
       } finally {
@@ -39,7 +58,7 @@ const MeetingPage = () => {
     };
 
     fetchMeeting();
-  }, [meetingCode]);
+  }, [meetingCode, dispatch, storedMeetingCode]);
 
   if (loading) {
     return (
@@ -59,9 +78,28 @@ const MeetingPage = () => {
     );
   }
 
+  const handleEndOrLeaveMeeting = () => {
+    // Clear meeting state from Redux
+    dispatch(clearMeeting());
+    // Navigate back to join page
+    navigate('/join');
+  };
+
   return (
     <section className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-10">
-      <h2 className="text-2xl font-semibold tracking-tight">{meeting.title}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold tracking-tight">{meeting.title}</h2>
+        <button
+          onClick={handleEndOrLeaveMeeting}
+          className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+            isHost
+              ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
+              : 'bg-slate-600 hover:bg-slate-700 focus:ring-slate-500'
+          }`}
+        >
+          {isHost ? 'End Meeting' : 'Leave Meeting'}
+        </button>
+      </div>
       
       <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-6">
         <div className="flex flex-col gap-4">

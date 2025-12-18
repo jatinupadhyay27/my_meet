@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAppDispatch } from '../store/hooks';
+import { setMeetingAsParticipant } from '../store/slices/meetingSlice';
 import { joinMeeting, getMeetingByCode } from '../services/meetingApi';
 
 /**
@@ -39,13 +41,14 @@ function extractMeetingCode(input: string): string {
 }
 
 const JoinMeetingPage = () => {
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const [meetingCode, setMeetingCode] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
-  const navigate = useNavigate();
 
   // Check if meeting requires password when meeting code changes
   useEffect(() => {
@@ -87,16 +90,22 @@ const JoinMeetingPage = () => {
     // Only update if we successfully extracted a code
     if (extractedCode && extractedCode.length >= 6) {
       e.preventDefault(); // Prevent default paste
+      // Set only the code, not the full URL
       setMeetingCode(extractedCode);
     }
   };
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    // If the value looks like a URL, extract the code
+    // If the value looks like a URL, extract the code and show only the code
     if (value.includes('/') || value.includes('http')) {
       const extractedCode = extractMeetingCode(value);
-      setMeetingCode(extractedCode);
+      // Only show the extracted code, not the full URL
+      if (extractedCode && extractedCode.length >= 6) {
+        setMeetingCode(extractedCode);
+      } else {
+        setMeetingCode(value.toUpperCase());
+      }
     } else {
       setMeetingCode(value.toUpperCase());
     }
@@ -109,10 +118,16 @@ const JoinMeetingPage = () => {
 
     try {
       const code = extractMeetingCode(meetingCode);
-      await joinMeeting({
+      const response = await joinMeeting({
         meetingCode: code,
         password: password.trim() || undefined,
       });
+
+      // Store meeting info in Redux as participant
+      dispatch(setMeetingAsParticipant({
+        meeting: response.meeting,
+        meetingCode: code,
+      }));
 
       // Navigate to meeting page on success
       navigate(`/meet/${code}`);

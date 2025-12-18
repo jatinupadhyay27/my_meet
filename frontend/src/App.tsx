@@ -3,6 +3,7 @@ import HomePage from './pages/HomePage';
 import CreateMeetingPage from './pages/CreateMeetingPage';
 import JoinMeetingPage from './pages/JoinMeetingPage';
 import MeetingPage from './pages/MeetingPage';
+import MeetingRoomPage from './pages/MeetingRoomPage';
 
 function App() {
   return (
@@ -46,7 +47,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/create" element={<CreateMeetingPage />} />
           <Route path="/join" element={<JoinMeetingPage />} />
-          <Route path="/meet/:meetingCode" element={<MeetingPage />} />
+          <Route path="/meet/:meetingCode" element={<MeetingRoomPage />} />
         </Routes>
       </main>
     </div>

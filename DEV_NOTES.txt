@@ -1,0 +1,311 @@
+================================================================================
+                    MEET PROJECT - DEVELOPMENT NOTES
+================================================================================
+
+This file documents the implementation progress and architecture decisions
+for the meeting application. Each day's work is documented with WHAT, WHY,
+and WHERE explanations.
+
+================================================================================
+DAY 1 – PROJECT FOUNDATION
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. Monorepo Structure
+   - Three main directories: frontend/, backend/, shared/
+   - Root package.json with scripts to run both frontend and backend
+   - Shared TypeScript types in shared/types/ for code reuse
+
+2. Frontend Setup (React + Vite)
+   - React 19 with TypeScript
+   - Vite as build tool (fast HMR)
+   - TailwindCSS for styling
+   - React Router for navigation
+   - Redux Toolkit for state management
+   - Basic routing: Home, Create Meeting, Join Meeting pages
+
+3. Backend Setup (Express + Prisma)
+   - Express 5 with TypeScript
+   - Prisma ORM for database management
+   - PostgreSQL database connection
+   - Modular structure: modules/, routes/, controllers/, services/
+   - Environment configuration with dotenv
+
+4. Database Schema (Prisma)
+   - User model (id, email, name, timestamps)
+   - Meeting model (id, title, meetingCode, password, scheduledAt, hostId)
+   - Transcript model (for future AI features)
+   - Relationships: User -> Meeting (host), Meeting -> Transcript
+
+5. Shared TypeScript Types
+   - User interface
+   - Meeting interface
+   - TranscriptSummary interface
+   - Located in shared/types/ for type safety across frontend and backend
+
+WHY THIS STRUCTURE:
+-------------------
+
+- Monorepo: Keeps related code together, enables shared types, easier
+  development workflow with single repository
+
+- React + Vite: Modern, fast development experience with hot module
+  replacement. Vite is much faster than Create React App.
+
+- Express + Prisma: Express is lightweight and flexible. Prisma provides
+  type-safe database access and migrations, reducing SQL boilerplate.
+
+- PostgreSQL: Reliable, robust relational database perfect for meeting
+  data, user management, and future features.
+
+- Shared Types: Ensures frontend and backend use the same data structures,
+  preventing type mismatches and bugs.
+
+WHERE IT LIVES:
+--------------
+
+- Frontend: frontend/src/
+  - Pages: frontend/src/pages/
+  - Components: frontend/src/components/
+  - Store: frontend/src/store/
+  - Services: frontend/src/services/
+
+- Backend: backend/src/
+  - Modules: backend/src/modules/ (meetings, auth, users, ai)
+  - Routes: backend/src/routes/
+  - Config: backend/src/config/ (env, db)
+
+- Shared: shared/types/
+  - Type definitions used by both frontend and backend
+
+- Database: backend/prisma/
+  - Schema: backend/prisma/schema.prisma
+  - Migrations: backend/prisma/migrations/
+
+================================================================================
+DAY 2 – MEETING SCHEDULING
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. Meeting Creation API
+   - POST /api/meetings
+   - Generates unique 8-character meeting code (alphanumeric)
+   - Optional password protection (hashed with bcrypt)
+   - Optional scheduled date/time
+   - Returns meeting code and shareable join URL
+
+2. Meeting Join/Validation API
+   - POST /api/meetings/join
+   - Validates meeting code exists
+   - Validates password if meeting is password-protected
+   - Returns meeting details on success
+
+3. Get Meeting by Code API
+   - GET /api/meetings/:meetingCode
+   - Returns meeting details including hasPassword flag
+   - Used for checking if password is required before joining
+
+4. Frontend Meeting Creation Page
+   - Form to create meeting with title, password, scheduled time
+   - Generates shareable link
+   - Copy-to-clipboard functionality
+   - Stores meeting in Redux as host
+
+5. Frontend Join Meeting Page
+   - Input for meeting code or full meeting URL
+   - Auto-extracts meeting code from pasted URLs
+   - Checks if password is required (debounced API call)
+   - Password input shown conditionally
+   - Stores meeting in Redux as participant
+
+6. Meeting State Management (Redux)
+   - meetingSlice with actions:
+     - setMeetingAsHost: When user creates meeting
+     - setMeetingAsParticipant: When user joins meeting
+     - clearMeeting: When user leaves
+   - Tracks: currentMeeting, meetingCode, isHost, joinUrl
+
+7. Meeting Code Generation
+   - Utility function: backend/src/utils/generateMeetingCode.ts
+   - 8-character alphanumeric codes
+   - Ensures uniqueness by checking database
+
+8. Password Hashing
+   - Utility function: backend/src/utils/hash.ts
+   - Uses bcrypt for secure password storage
+   - Never stores plain text passwords
+
+WHY THESE FEATURES:
+-------------------
+
+- Meeting Codes: Simple, human-readable way to join meetings without
+  complex authentication. Users can share codes easily.
+
+- Password Protection: Allows meeting hosts to restrict access to
+  authorized participants only.
+
+- Scheduled Meetings: Enables planning meetings in advance, useful for
+  recurring or planned sessions.
+
+- Shareable Links: Makes it easy to invite participants - just copy and
+  paste the link.
+
+- Redux State: Centralized state management ensures meeting data is
+  available across components and persists during navigation.
+
+- URL Extraction: User-friendly feature - users can paste full URLs and
+  the app extracts the code automatically.
+
+WHERE IT LIVES:
+--------------
+
+- Backend APIs:
+  - Controller: backend/src/modules/meetings/meetings.controller.ts
+  - Service: backend/src/modules/meetings/meetings.service.ts
+  - Routes: backend/src/modules/meetings/meetings.routes.ts
+
+- Frontend Pages:
+  - Create: frontend/src/pages/CreateMeetingPage.tsx
+  - Join: frontend/src/pages/JoinMeetingPage.tsx
+  - Meeting Details: frontend/src/pages/MeetingPage.tsx
+
+- Frontend Services:
+  - API Client: frontend/src/services/meetingApi.ts
+  - HTTP Client: frontend/src/utils/apiClient.ts
+
+- State Management:
+  - Redux Slice: frontend/src/store/slices/meetingSlice.ts
+
+- Utilities:
+  - Code Generation: backend/src/utils/generateMeetingCode.ts
+  - Password Hashing: backend/src/utils/hash.ts
+
+================================================================================
+DAY 3 – REALTIME COMMUNICATION
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. Socket.io Server (Backend)
+   - WebSocket server for real-time bidirectional communication
+   - Attached to HTTP server in backend/src/server.ts
+   - CORS configured for frontend origin
+   - Room-based architecture (each meeting code is a room)
+
+2. Socket Events Implemented:
+   a) join-meeting
+      - Payload: { meetingCode, userName }
+      - Socket joins room named after meetingCode
+      - Broadcasts "user-joined" to other room members
+      - Confirms join with "joined-meeting" to sender
+
+   b) leave-meeting
+      - Payload: { meetingCode, userName }
+      - Socket leaves room
+      - Broadcasts "user-left" to room members
+
+   c) send-message
+      - Payload: { meetingCode, message, sender }
+      - Broadcasts "message-received" to all in room
+
+   d) send-reaction
+      - Payload: { meetingCode, reaction, sender }
+      - Broadcasts "reaction-received" to all in room
+
+   e) disconnect
+      - Automatic cleanup when socket disconnects
+      - Notifies room members of departure
+
+3. Socket.io Client (Frontend)
+   - Service layer: frontend/src/services/socket.service.ts
+   - Functions: connectSocket(), joinMeeting(), leaveMeeting(),
+     sendMessage(), sendReaction(), disconnectSocket()
+   - Event subscription helpers: onSocketEvent(), offSocketEvent()
+
+4. Meeting Room Page
+   - New page: frontend/src/pages/MeetingRoomPage.tsx
+   - Features:
+     * User name input before joining
+     * Socket connection on mount
+     * Real-time participant join/leave notifications
+     * Chat messaging interface
+     * Emoji reactions (8 common reactions)
+     * Activity feed showing participant events
+     * Connection status indicator
+   - UI Layout:
+     * Main area (placeholder for video in Day 4)
+     * Sidebar with Activity, Reactions, and Chat sections
+
+5. Routing Update
+   - Updated /meet/:meetingCode route to use MeetingRoomPage
+   - Maintains backward compatibility
+
+WHY WEBSOCKETS ARE REQUIRED:
+---------------------------
+
+- Real-time Communication: HTTP is request-response only. WebSockets
+  enable server to push updates to clients instantly without polling.
+
+- Low Latency: Perfect for chat, reactions, and participant presence.
+  Messages appear instantly to all participants.
+
+- Foundation for WebRTC: Socket.io will be used in Day 4 to exchange
+  WebRTC signaling data (ICE candidates, offers, answers) between peers.
+  WebRTC needs a signaling server to establish peer-to-peer connections.
+
+- Scalability: Room-based architecture allows efficient message routing.
+  Only participants in a meeting room receive relevant events.
+
+- Bidirectional: Both client and server can initiate communication,
+  essential for real-time features.
+
+WHERE IT LIVES:
+--------------
+
+- Backend Socket Server:
+  - Implementation: backend/src/modules/sockets/socket.ts
+  - Integration: backend/src/server.ts (initializes socket server)
+
+- Frontend Socket Client:
+  - Service: frontend/src/services/socket.service.ts
+  - Usage: frontend/src/pages/MeetingRoomPage.tsx
+
+- Dependencies:
+  - Backend: socket.io (v4.8.1)
+  - Frontend: socket.io-client (v4.8.1)
+
+- Configuration:
+  - Socket URL: Defaults to http://localhost:4000
+  - Can be overridden with VITE_SOCKET_URL environment variable
+
+FUTURE EXTENSIONS (Day 4+):
+---------------------------
+
+- WebRTC Signaling: Socket.io will handle:
+  * offer: WebRTC offer from peer
+  * answer: WebRTC answer from peer
+  * ice-candidate: ICE candidate exchange
+  * peer-joined: Notify when peer is ready for connection
+
+- Video/Audio: WebRTC peer-to-peer connections for media streaming
+
+- Screen Sharing: WebRTC screen capture API integration
+
+- Recording: MediaRecorder API for meeting recordings
+
+================================================================================
+NOTES FOR FUTURE DEVELOPMENT
+================================================================================
+
+- This file should be appended to, not overwritten, as new features are added
+- Each day's work should document WHAT, WHY, and WHERE
+- Keep explanations simple and developer-friendly
+- Reference file paths and key architectural decisions
+
+================================================================================
+
