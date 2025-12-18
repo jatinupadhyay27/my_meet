@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  meetings  Meeting[] @relation("UserMeetings")
+}
+
+model Meeting {
+  id          String        @id @default(uuid())
+  title       String
+  meetingCode String        @unique
+  password    String?       // Hashed password, nullable
+  scheduledAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  host        User?         @relation("UserMeetings", fields: [hostId], references: [id])
+  hostId      String?
+  transcripts Transcript[]
+}
+
+model Transcript {
+  id        String   @id @default(cuid())
+  content   String
+  summary   String?
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id])
+  meetingId String
+}
+
+

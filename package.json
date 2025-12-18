@@ -1,0 +1,15 @@
+{
+  "name": "my-meet-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev:client": "npm run dev --prefix frontend",
+    "dev:server": "npm run dev --prefix backend",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
