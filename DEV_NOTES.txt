@@ -446,6 +446,162 @@ FUTURE EXTENSIONS (Day 5+):
   * Raise hand feature
 
 ================================================================================
+DAY 5 – MEDIA CONTROLS & SCREEN SHARING
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. MediaControls Component
+   - Fixed bottom toolbar with media control buttons
+   - Toggle microphone ON/OFF
+   - Toggle camera ON/OFF
+   - Start/Stop screen sharing
+   - Leave meeting button
+   - Visual state indicators (active/inactive colors)
+   - Loading states for screen sharing
+
+2. Video Tile Enhancements
+   - Mic muted icon overlay on video tiles
+   - Camera off placeholder with avatar (first letter of name)
+   - Screen share highlighting with blue ring border
+   - Participant name overlay on video tiles
+   - Media state indicators (mic/camera status badges)
+
+3. Media State Management
+   - Real-time sync with LiveKit track states
+   - Event listeners for track published/unpublished
+   - Event listeners for track muted/unmuted
+   - State persists across re-renders
+   - Clean cleanup on component unmount
+
+4. Screen Sharing Implementation
+   - Browser screen capture API integration
+   - Separate track source (Track.Source.ScreenShare)
+   - Audio capture from screen share
+   - Automatic stop handling when user ends via browser UI
+   - Permission error handling with user-friendly messages
+   - Screen shares prioritized in grid layout
+
+5. LiveKit Track Control
+   - Audio track mute/unmute via track.mute() and track.unmute()
+   - Video track mute/unmute for camera control
+   - Track publishing for screen sharing
+   - Track unpublishing for stopping screen share
+
+WHY THESE FEATURES:
+-------------------
+
+- Media Controls: Essential for user control over their media. Users need to
+  mute/unmute mic and camera during meetings for privacy and bandwidth management.
+
+- Visual Indicators: Critical for UX - participants need to see who is muted,
+  who has camera off, and who is sharing screen. This prevents confusion and
+  improves meeting flow.
+
+- Screen Sharing: Core feature for presentations, demos, and collaboration.
+  Separate track source allows screen shares to be displayed prominently while
+  maintaining camera views.
+
+- State Management: Real-time sync ensures UI always reflects actual media state.
+  Event-driven updates prevent state drift and ensure accurate indicators.
+
+HOW LIVEKIT HANDLES MEDIA TRACKS:
+----------------------------------
+
+- Audio Tracks: Each participant can publish one audio track. Tracks can be
+  muted/unmuted without unpublishing. Muted tracks still exist but send silence.
+
+- Video Tracks: Participants can publish multiple video tracks:
+  * Camera track (Track.Source.Camera) - webcam feed
+  * Screen share track (Track.Source.ScreenShare) - screen capture
+  * Screen share audio (Track.Source.ScreenShareAudio) - system audio
+
+- Track Lifecycle:
+  * Publish: Create and share track with other participants
+  * Mute/Unmute: Temporarily disable/enable track without unpublishing
+  * Unpublish: Remove track completely
+
+- Why Screen Sharing is Separate:
+  * Allows simultaneous camera and screen share
+  * Different quality/bitrate requirements
+  * Can be prioritized in UI (screen share shown larger)
+  * Enables recording of both sources separately
+
+HOW THIS PREPARES FOR DAY 6:
+----------------------------
+
+- Recording Hooks: Media state tracking provides foundation for recording
+  controls. Recording can start/stop based on media state.
+
+- Audio Capture: Mic state management enables selective audio recording and
+  AI transcription. Only active audio tracks need transcription.
+
+- Media State Analytics: Track state changes can be logged for analytics:
+  * How often users mute/unmute
+  * Average meeting duration with camera on
+  * Screen sharing usage patterns
+
+WHERE IT LIVES:
+--------------
+
+- Media Controls Component:
+  - Component: frontend/src/components/MediaControls.tsx
+  - Integration: frontend/src/components/VideoRoom.tsx
+
+- Video Tile Enhancements:
+  - Component: frontend/src/components/VideoRoom.tsx (RoomContent)
+  - Visual indicators: Overlay components in video tile rendering
+
+- State Management:
+  - MediaControls.tsx: useState hooks for local state
+  - Event listeners: LiveKit participant events
+  - Sync logic: useEffect hooks monitoring track publications
+
+- Screen Sharing:
+  - Implementation: MediaControls.tsx (handleToggleScreenShare)
+  - Browser API: navigator.mediaDevices.getDisplayMedia()
+  - Track Publishing: localParticipant.publishTrack()
+
+ARCHITECTURE DECISIONS:
+-----------------------
+
+- Fixed Bottom Toolbar: Similar to Zoom/Google Meet UX. Always accessible,
+  doesn't interfere with video content. Positioned with fixed positioning and
+  centered horizontally.
+
+- Screen Share Priority: Screen shares appear first in grid layout, then
+  camera feeds. This matches user expectations - shared content is most important.
+
+- Avatar Placeholder: When camera is off, show first letter of participant name
+  in circular avatar. Provides visual identity without video feed.
+
+- State Sync: Don't rely solely on local state. Always sync with actual track
+  states via event listeners. Prevents UI/state mismatches.
+
+- Error Handling: Screen sharing permission errors are caught and displayed to
+  user. Graceful degradation - meeting continues even if screen share fails.
+
+FUTURE EXTENSIONS (Day 6+):
+---------------------------
+
+- Day 6: Recording
+  * Use media state to determine what to record
+  * Record only active tracks (skip muted audio/video)
+  * Separate recording tracks for screen shares
+
+- Future: Participant Management
+  * Host can mute/unmute other participants
+  * Host can disable camera for others
+  * Participant list showing media states
+
+- Future: Advanced Controls
+  * Virtual backgrounds
+  * Audio filters/effects
+  * Video quality selection
+  * Bandwidth management
+
+================================================================================
 NOTES FOR FUTURE DEVELOPMENT
 ================================================================================
 

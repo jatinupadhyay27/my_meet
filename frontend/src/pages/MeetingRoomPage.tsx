@@ -15,6 +15,7 @@ import {
 } from '../services/socket.service';
 import { generateLiveKitToken } from '../services/livekitApi';
 import VideoRoom from '../components/VideoRoom';
+import ChatReactionsOverlay from '../components/ChatReactionsOverlay';
 
 interface ChatMessage {
   message: string;
@@ -57,6 +58,10 @@ const MeetingRoomPage = () => {
   const [messageInput, setMessageInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const reactionsEndRef = useRef<HTMLDivElement>(null);
+  
+  // Overlay state
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isReactionsOpen, setIsReactionsOpen] = useState(false);
   
   // LiveKit state
   const [liveKitToken, setLiveKitToken] = useState<string | null>(null);
@@ -208,6 +213,14 @@ const MeetingRoomPage = () => {
     }
   };
 
+  const handleToggleChat = () => {
+    setIsChatOpen((prev) => !prev);
+  };
+
+  const handleToggleReactions = () => {
+    setIsReactionsOpen((prev) => !prev);
+  };
+
   const handleEndOrLeaveMeeting = () => {
     if (meetingCode && userName) {
       leaveMeeting(meetingCode, userName);
@@ -295,141 +308,61 @@ const MeetingRoomPage = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Main content area - Video Room */}
-        <div className="lg:col-span-2">
-          <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-6">
-            <div className="h-96 w-full">
-              {isLoadingToken ? (
-                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-                  <div className="text-center text-sm text-slate-400">
-                    <p>Connecting to video room...</p>
-                  </div>
-                </div>
-              ) : liveKitError ? (
-                <div className="flex h-full items-center justify-center rounded-lg border border-red-700 bg-red-900/20">
-                  <div className="text-center text-sm text-red-300">
-                    <p className="font-medium">Video Connection Error</p>
-                    <p className="mt-1 text-xs">{liveKitError}</p>
-                    <p className="mt-2 text-xs text-slate-400">
-                      Chat and reactions are still available
-                    </p>
-                  </div>
-                </div>
-              ) : liveKitToken && liveKitUrl ? (
-                <VideoRoom
-                  token={liveKitToken}
-                  serverUrl={liveKitUrl}
-                  meetingCode={meetingCode!}
-                  userName={userName}
-                  onDisconnect={() => {
-                    setLiveKitToken(null);
-                    setLiveKitUrl(null);
-                  }}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-                  <div className="text-center text-sm text-slate-400">
-                    <p>Preparing video room...</p>
-                  </div>
-                </div>
-              )}
+      {/* Full screen video room */}
+      <div className="relative h-[calc(100vh-12rem)] w-full">
+        {isLoadingToken ? (
+          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+            <div className="text-center text-sm text-slate-400">
+              <p>Connecting to video room...</p>
             </div>
           </div>
-        </div>
+        ) : liveKitError ? (
+          <div className="flex h-full items-center justify-center rounded-lg border border-red-700 bg-red-900/20">
+            <div className="text-center text-sm text-red-300">
+              <p className="font-medium">Video Connection Error</p>
+              <p className="mt-1 text-xs">{liveKitError}</p>
+              <p className="mt-2 text-xs text-slate-400">
+                Chat and reactions are still available
+              </p>
+            </div>
+          </div>
+        ) : liveKitToken && liveKitUrl ? (
+          <VideoRoom
+            token={liveKitToken}
+            serverUrl={liveKitUrl}
+            meetingCode={meetingCode!}
+            userName={userName}
+            onDisconnect={() => {
+              setLiveKitToken(null);
+              setLiveKitUrl(null);
+            }}
+            onLeave={handleEndOrLeaveMeeting}
+            onToggleChat={handleToggleChat}
+            onToggleReactions={handleToggleReactions}
+            isChatOpen={isChatOpen}
+            isReactionsOpen={isReactionsOpen}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+            <div className="text-center text-sm text-slate-400">
+              <p>Preparing video room...</p>
+            </div>
+          </div>
+        )}
 
-        {/* Sidebar - Chat and Reactions */}
-        <div className="flex flex-col gap-4">
-          {/* Participant Events */}
-          <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-300">Activity</h3>
-            <div className="max-h-32 space-y-1 overflow-y-auto text-xs text-slate-400">
-              {participantEvents.length === 0 ? (
-                <p className="text-slate-500">No activity yet</p>
-              ) : (
-                participantEvents.map((event, idx) => (
-                  <p key={idx} className="truncate">
-                    {event.userName ? (
-                      <>
-                        <span className="font-medium text-slate-300">{event.userName}</span>{' '}
-                        {event.userName === userName ? 'joined' : 'joined/left'}
-                      </>
-                    ) : (
-                      'A participant left'
-                    )}
-                  </p>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Reactions */}
-          <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-300">Reactions</h3>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {commonReactions.map((reaction) => (
-                <button
-                  key={reaction}
-                  onClick={() => handleSendReaction(reaction)}
-                  className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-lg transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  title={`Send ${reaction}`}
-                >
-                  {reaction}
-                </button>
-              ))}
-            </div>
-            <div className="max-h-32 space-y-1 overflow-y-auto text-xs text-slate-400">
-              {reactions.length === 0 ? (
-                <p className="text-slate-500">No reactions yet</p>
-              ) : (
-                reactions.map((reaction, idx) => (
-                  <p key={idx} className="truncate">
-                    <span className="text-lg">{reaction.reaction}</span>{' '}
-                    <span className="font-medium text-slate-300">{reaction.sender}</span>
-                  </p>
-                ))
-              )}
-              <div ref={reactionsEndRef} />
-            </div>
-          </div>
-
-          {/* Chat */}
-          <div className="flex flex-1 flex-col rounded-lg border border-slate-700 bg-slate-900/60 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-300">Chat</h3>
-            <div className="mb-3 flex-1 space-y-2 overflow-y-auto">
-              {chatMessages.length === 0 ? (
-                <p className="text-xs text-slate-500">No messages yet</p>
-              ) : (
-                chatMessages.map((msg, idx) => (
-                  <div key={idx} className="rounded-lg bg-slate-800/40 p-2">
-                    <p className="text-sm text-slate-200">
-                      <span className="font-medium text-slate-300">{msg.sender}</span>
-                      {' : '}
-                      <span>{msg.message}</span>
-                    </p>
-                  </div>
-                ))
-              )}
-              <div ref={chatEndRef} />
-            </div>
-            <form onSubmit={handleSendMessage} className="flex gap-2">
-              <input
-                type="text"
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={!messageInput.trim()}
-                className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Send
-              </button>
-            </form>
-          </div>
-        </div>
+        {/* Chat and Reactions Overlay */}
+        <ChatReactionsOverlay
+          isChatOpen={isChatOpen}
+          isReactionsOpen={isReactionsOpen}
+          chatMessages={chatMessages}
+          reactions={reactions}
+          messageInput={messageInput}
+          onMessageInputChange={setMessageInput}
+          onSendMessage={handleSendMessage}
+          onSendReaction={handleSendReaction}
+          commonReactions={commonReactions}
+          userName={userName}
+        />
       </div>
     </section>
   );
