@@ -30,6 +30,8 @@ interface VideoRoomProps {
   serverUrl: string;
   meetingCode: string;
   userName: string;
+  initialMicEnabled?: boolean;
+  initialCameraEnabled?: boolean;
   onDisconnect?: () => void;
   onLeave?: () => void;
   onToggleChat?: () => void;
@@ -42,7 +44,9 @@ const VideoRoom = ({
   token, 
   serverUrl, 
   meetingCode, 
-  userName, 
+  userName,
+  initialMicEnabled = true,
+  initialCameraEnabled = true,
   onDisconnect, 
   onLeave,
   onToggleChat,
@@ -69,7 +73,9 @@ const VideoRoom = ({
       <RoomAudioRenderer />
       <MediaControls 
         meetingCode={meetingCode} 
-        userName={userName} 
+        userName={userName}
+        initialMicEnabled={initialMicEnabled}
+        initialCameraEnabled={initialCameraEnabled}
         onLeave={onLeave}
         onToggleChat={onToggleChat}
         onToggleReactions={onToggleReactions}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
 
 /**
@@ -21,6 +21,8 @@ interface MediaControlsProps {
   onLeave?: () => void;
   meetingCode?: string;
   userName?: string;
+  initialMicEnabled?: boolean;
+  initialCameraEnabled?: boolean;
   onToggleChat?: () => void;
   onToggleReactions?: () => void;
   isChatOpen?: boolean;
@@ -30,7 +32,9 @@ interface MediaControlsProps {
 const MediaControls = ({ 
   onLeave, 
   meetingCode, 
-  userName, 
+  userName,
+  initialMicEnabled = true,
+  initialCameraEnabled = true,
   onToggleChat, 
   onToggleReactions,
   isChatOpen = false,
@@ -39,26 +43,303 @@ const MediaControls = ({
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
   
-  // Media state
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isCameraOn, setIsCameraOn] = useState(true);
+  // Media state - initialize with provided preferences
+  const [isMicOn, setIsMicOn] = useState(initialMicEnabled);
+  const [isCameraOn, setIsCameraOn] = useState(initialCameraEnabled);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSharingLoading, setIsSharingLoading] = useState(false);
+  const [initialPreferencesApplied, setInitialPreferencesApplied] = useState(false);
+  
+  // Track if we've manually set the state (to prevent sync from overriding)
+  const [stateManuallySet, setStateManuallySet] = useState(false);
 
-  // Sync state with actual track states
+  // Apply initial preferences when room connects and tracks are published
   useEffect(() => {
-    if (!localParticipant) return;
+    if (!room || !localParticipant || initialPreferencesApplied) return;
+
+    // Also listen for room connection to apply preferences immediately
+    const handleRoomConnected = () => {
+      // Small delay to ensure tracks are published
+      setTimeout(() => {
+        if (initialPreferencesApplied) return;
+        
+        const audioTracks = Array.from(localParticipant.audioTrackPublications.values());
+        const videoTracks = Array.from(localParticipant.videoTrackPublications.values());
+        const micTrack = audioTracks.find((pub) => pub.track !== undefined);
+        const cameraTrack = videoTracks.find((pub) => pub.source === Track.Source.Camera && pub.track !== undefined);
+
+        if (micTrack?.track) {
+          const shouldBeMuted = !initialMicEnabled;
+          if (shouldBeMuted && !micTrack.track.isMuted) {
+            micTrack.track.mute().then(() => {
+              setIsMicOn(false);
+              setStateManuallySet(true);
+            }).catch(console.warn);
+          } else if (!shouldBeMuted && micTrack.track.isMuted) {
+            micTrack.track.unmute().then(() => {
+              setIsMicOn(true);
+              setStateManuallySet(true);
+            }).catch(console.warn);
+          }
+        }
+
+        if (cameraTrack?.track) {
+          const shouldBeMuted = !initialCameraEnabled;
+          if (shouldBeMuted && !cameraTrack.track.isMuted) {
+            cameraTrack.track.mute().then(() => {
+              setIsCameraOn(false);
+              setStateManuallySet(true);
+            }).catch(console.warn);
+          } else if (!shouldBeMuted && cameraTrack.track.isMuted) {
+            cameraTrack.track.unmute().then(() => {
+              setIsCameraOn(true);
+              setStateManuallySet(true);
+            }).catch(console.warn);
+          }
+        }
+      }, 200);
+    };
+
+    // Check if room is already connected
+    if (room.state === 'connected') {
+      handleRoomConnected();
+    }
+
+    room.on(RoomEvent.Connected, handleRoomConnected);
+
+    return () => {
+      room.off(RoomEvent.Connected, handleRoomConnected);
+    };
+  }, [room, localParticipant, initialMicEnabled, initialCameraEnabled, initialPreferencesApplied]);
+
+  // Apply initial preferences when tracks are published
+  useEffect(() => {
+    if (!localParticipant || initialPreferencesApplied) return;
+
+    // Immediate handler for when tracks are published - use publication mute
+    const handleTrackPublishedImmediate = async (publication: any) => {
+      if (initialPreferencesApplied) return;
+      
+      const track = publication.track;
+      if (!track) return;
+
+      try {
+        // Use publication's mute method which is more reliable
+        // Check if it's an audio track
+        if (track.kind === 'audio') {
+          if (!initialMicEnabled) {
+            // Mute the track
+            if (!track.isMuted) {
+              await track.mute();
+            }
+            setIsMicOn(false);
+            setStateManuallySet(true);
+          } else {
+            // Ensure it's unmuted
+            if (track.isMuted) {
+              await track.unmute();
+            }
+            setIsMicOn(true);
+            setStateManuallySet(true);
+          }
+        }
+        // Check if it's a camera video track
+        else if (track.kind === 'video' && publication.source === Track.Source.Camera) {
+          if (!initialCameraEnabled) {
+            // Mute the track
+            if (!track.isMuted) {
+              await track.mute();
+            }
+            setIsCameraOn(false);
+            setStateManuallySet(true);
+          } else {
+            // Ensure it's unmuted
+            if (track.isMuted) {
+              await track.unmute();
+            }
+            setIsCameraOn(true);
+            setStateManuallySet(true);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to apply preference immediately:', error);
+      }
+    };
+
+    const applyInitialPreferences = async () => {
+      // Retry logic to handle tracks that might not be ready immediately
+      let retries = 0;
+      const maxRetries = 15;
+      
+      while (retries < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        let micApplied = false;
+        let cameraApplied = false;
+        let micTrackFound = false;
+        let cameraTrackFound = false;
+
+        // Apply mic preference
+        const audioTracks = Array.from(localParticipant.audioTrackPublications.values());
+        const micTrack = audioTracks.find((pub) => pub.track !== undefined);
+        micTrackFound = !!micTrack?.track;
+        
+        if (micTrack?.track) {
+          try {
+            const shouldBeMuted = !initialMicEnabled;
+            
+            // Mute/unmute the track directly
+            if (shouldBeMuted) {
+              if (!micTrack.track.isMuted) {
+                await micTrack.track.mute();
+              }
+              setIsMicOn(false);
+              setStateManuallySet(true);
+            } else {
+              if (micTrack.track.isMuted) {
+                await micTrack.track.unmute();
+              }
+              setIsMicOn(true);
+              setStateManuallySet(true);
+            }
+            micApplied = true;
+          } catch (error) {
+            console.warn('Failed to apply mic preference:', error);
+          }
+        }
+
+        // Apply camera preference
+        const cameraTrack = Array.from(localParticipant.videoTrackPublications.values())
+          .find((pub) => pub.source === Track.Source.Camera && pub.track !== undefined);
+        cameraTrackFound = !!cameraTrack?.track;
+        
+        if (cameraTrack?.track) {
+          try {
+            const shouldBeMuted = !initialCameraEnabled;
+            
+            // Mute/unmute the track directly
+            if (shouldBeMuted) {
+              if (!cameraTrack.track.isMuted) {
+                await cameraTrack.track.mute();
+              }
+              setIsCameraOn(false);
+              setStateManuallySet(true);
+            } else {
+              if (cameraTrack.track.isMuted) {
+                await cameraTrack.track.unmute();
+              }
+              setIsCameraOn(true);
+              setStateManuallySet(true);
+            }
+            cameraApplied = true;
+          } catch (error) {
+            console.warn('Failed to apply camera preference:', error);
+          }
+        }
+
+        // Mark as applied if we've processed all available tracks
+        if (micTrackFound && cameraTrackFound) {
+          // Both tracks found, apply preferences and mark as done
+          if (micApplied && cameraApplied) {
+            setInitialPreferencesApplied(true);
+            break;
+          }
+        } else if (retries >= 8) {
+          // After several retries, if we have at least one track, apply what we can
+          if ((micTrackFound && micApplied) || (cameraTrackFound && cameraApplied)) {
+            setInitialPreferencesApplied(true);
+            break;
+          }
+        }
+
+        retries++;
+      }
+    };
+
+    // Try to apply preferences when tracks are published
+    const handleTrackPublished = (publication: any) => {
+      // Apply immediately when track is published
+      handleTrackPublishedImmediate(publication);
+      
+      // Also trigger the retry logic
+      if (!initialPreferencesApplied) {
+        applyInitialPreferences();
+      }
+    };
+
+    // Check if tracks are already published and apply immediately
+    const audioTracks = Array.from(localParticipant.audioTrackPublications.values());
+    const videoTracks = Array.from(localParticipant.videoTrackPublications.values());
+    const micTrack = audioTracks.find((pub) => pub.track !== undefined);
+    const cameraTrack = videoTracks.find((pub) => pub.source === Track.Source.Camera && pub.track !== undefined);
+
+    // Apply immediately to existing tracks
+    if (micTrack || cameraTrack) {
+      // Apply preferences immediately to existing tracks
+      if (micTrack && micTrack.track) {
+        const shouldBeMuted = !initialMicEnabled;
+        if (shouldBeMuted && !micTrack.track.isMuted) {
+          micTrack.track.mute().then(() => {
+            setIsMicOn(false);
+            setStateManuallySet(true);
+          }).catch(console.warn);
+        } else if (!shouldBeMuted && micTrack.track.isMuted) {
+          micTrack.track.unmute().then(() => {
+            setIsMicOn(true);
+            setStateManuallySet(true);
+          }).catch(console.warn);
+        } else {
+          setIsMicOn(!shouldBeMuted);
+          setStateManuallySet(true);
+        }
+      }
+      
+      if (cameraTrack && cameraTrack.track) {
+        const shouldBeMuted = !initialCameraEnabled;
+        if (shouldBeMuted && !cameraTrack.track.isMuted) {
+          cameraTrack.track.mute().then(() => {
+            setIsCameraOn(false);
+            setStateManuallySet(true);
+          }).catch(console.warn);
+        } else if (!shouldBeMuted && cameraTrack.track.isMuted) {
+          cameraTrack.track.unmute().then(() => {
+            setIsCameraOn(true);
+            setStateManuallySet(true);
+          }).catch(console.warn);
+        } else {
+          setIsCameraOn(!shouldBeMuted);
+          setStateManuallySet(true);
+        }
+      }
+      
+      // Also run the retry logic as backup
+      applyInitialPreferences();
+    }
+    
+    // Listen for new tracks being published
+    localParticipant.on('trackPublished', handleTrackPublished);
+
+    return () => {
+      localParticipant.off('trackPublished', handleTrackPublished);
+    };
+  }, [localParticipant, initialMicEnabled, initialCameraEnabled, initialPreferencesApplied]);
+
+  // Sync state with actual track states (only after initial preferences are applied)
+  useEffect(() => {
+    if (!localParticipant || !initialPreferencesApplied || !stateManuallySet) return;
 
     const updateMediaState = () => {
-      // Check mic state - use publication's isMuted property
+      // Check mic state - use publication's isMuted property (more reliable)
       const audioTracks = Array.from(localParticipant.audioTrackPublications.values());
       const micTrack = audioTracks.find((pub) => pub.track !== undefined);
+      // Track is ON if it exists and is NOT muted
       const micEnabled = micTrack ? !micTrack.isMuted : false;
       setIsMicOn(micEnabled);
 
-      // Check camera state - use publication's isMuted property
+      // Check camera state - use publication's isMuted property (more reliable)
       const cameraTrack = Array.from(localParticipant.videoTrackPublications.values())
         .find((pub) => pub.source === Track.Source.Camera && pub.track !== undefined);
+      // Track is ON if it exists and is NOT muted
       const cameraEnabled = cameraTrack ? !cameraTrack.isMuted : false;
       setIsCameraOn(cameraEnabled);
 
@@ -88,7 +369,7 @@ const MediaControls = ({
       localParticipant.off('trackMuted', handleTrackMuted);
       localParticipant.off('trackUnmuted', handleTrackUnmuted);
     };
-  }, [localParticipant]);
+  }, [localParticipant, initialPreferencesApplied, stateManuallySet]);
 
   // Toggle microphone
   const handleToggleMic = async () => {
