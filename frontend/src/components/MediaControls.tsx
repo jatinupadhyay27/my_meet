@@ -483,6 +483,7 @@ const MediaControls = ({
         // Update state immediately for better UX
         const newMicState = !isMicOn;
         setIsMicOn(newMicState);
+        setStateManuallySet(true);
         
         // Optional: Emit socket event for UI sync and analytics
         if (meetingCode && userName) {
@@ -493,7 +494,27 @@ const MediaControls = ({
           });
         }
       } else {
-        console.warn('No audio track found to toggle');
+        // If no audio track exists, enable microphone (this will create and publish the track)
+        if (!isMicOn) {
+          try {
+            await localParticipant.setMicrophoneEnabled(true);
+            setIsMicOn(true);
+            setStateManuallySet(true);
+            
+            // Optional: Emit socket event for UI sync and analytics
+            if (meetingCode && userName) {
+              emitMediaStateChanged(meetingCode, userName, {
+                isMicOn: true,
+                isCameraOn,
+                isScreenSharing,
+              });
+            }
+          } catch (error) {
+            console.error('Failed to enable microphone:', error);
+          }
+        } else {
+          console.warn('No audio track found to toggle');
+        }
       }
     } catch (error) {
       console.error('Failed to toggle microphone:', error);

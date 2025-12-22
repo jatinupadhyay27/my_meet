@@ -62,7 +62,7 @@ const VideoRoom = ({
   return (
     <LiveKitRoom
       video={initialCameraEnabled}
-      audio={initialMicEnabled}
+      audio={true}
       token={token}
       serverUrl={serverUrl}
       connect={true}
