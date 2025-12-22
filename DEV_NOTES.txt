@@ -489,6 +489,12 @@ WHAT WAS IMPLEMENTED:
    - Track publishing for screen sharing
    - Track unpublishing for stopping screen share
 
+6. Optional Socket.io Events (Minimal Implementation)
+   - media-state-changed event emission on media toggle
+   - Used for UI sync and future analytics
+   - Backend handler logs events (can be extended for broadcasting)
+   - Minimal implementation - doesn't affect core functionality
+
 WHY THESE FEATURES:
 -------------------
 
@@ -562,6 +568,11 @@ WHERE IT LIVES:
   - Implementation: MediaControls.tsx (handleToggleScreenShare)
   - Browser API: navigator.mediaDevices.getDisplayMedia()
   - Track Publishing: localParticipant.publishTrack()
+
+- Optional Socket Events:
+  - Frontend: frontend/src/services/socket.service.ts (emitMediaStateChanged)
+  - Backend: backend/src/modules/sockets/socket.ts (media-state-changed handler)
+  - Usage: Emitted when mic/camera/screen share state changes
 
 ARCHITECTURE DECISIONS:
 -----------------------

@@ -111,6 +111,27 @@ export function sendReaction(meetingCode: string, reaction: string, sender: stri
 }
 
 /**
+ * Emit media state change event (optional, for UI sync and analytics)
+ * @param meetingCode - The meeting code
+ * @param userName - The user's name
+ * @param mediaState - The current media state
+ */
+export function emitMediaStateChanged(
+  meetingCode: string,
+  userName: string,
+  mediaState: { isMicOn: boolean; isCameraOn: boolean; isScreenSharing: boolean }
+): void {
+  if (socket && socket.connected) {
+    socket.emit('media-state-changed', {
+      meetingCode,
+      userName,
+      ...mediaState,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
  * Disconnect from Socket.io server
  */
 export function disconnectSocket(): void {

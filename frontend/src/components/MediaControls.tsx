@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Track, RoomEvent } from 'livekit-client';
 import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
+import { emitMediaStateChanged } from '../services/socket.service';
 
 /**
  * MediaControls component for meeting media controls
@@ -53,14 +54,68 @@ const MediaControls = ({
   // Track if we've manually set the state (to prevent sync from overriding)
   const [stateManuallySet, setStateManuallySet] = useState(false);
 
+  // Helper function to disable video track immediately (synchronous)
+  const disableVideoTrack = (track: any) => {
+    // Try multiple ways to access the underlying MediaStreamTrack
+    const mediaStreamTrack = track?.mediaStreamTrack || 
+                             track?.track ||
+                             track;
+    
+    // Disable the track immediately - this is synchronous and prevents video from showing
+    if (mediaStreamTrack && typeof mediaStreamTrack.enabled !== 'undefined') {
+      try {
+        mediaStreamTrack.enabled = false;
+      } catch (e) {
+        console.warn('Failed to disable MediaStreamTrack:', e);
+      }
+    }
+  };
+
+  // Helper function to enable video track
+  const enableVideoTrack = (track: any) => {
+    const mediaStreamTrack = track?.mediaStreamTrack || 
+                             track?.track ||
+                             track;
+    
+    if (mediaStreamTrack && typeof mediaStreamTrack.enabled !== 'undefined') {
+      try {
+        mediaStreamTrack.enabled = true;
+      } catch (e) {
+        console.warn('Failed to enable MediaStreamTrack:', e);
+      }
+    }
+  };
+
+  // Completely stop and unpublish camera track (like Google Meet/Zoom)
+  const stopCameraCompletely = async () => {
+    if (!localParticipant) return;
+
+    const cameraPub = Array.from(
+      localParticipant.videoTrackPublications.values()
+    ).find(pub => pub.source === Track.Source.Camera);
+
+    if (cameraPub?.track) {
+      try {
+        await localParticipant.unpublishTrack(cameraPub.track);
+        cameraPub.track.stop(); // important
+      } catch (e) {
+        console.warn('Failed to fully stop camera:', e);
+      }
+    }
+    setIsCameraOn(false);
+  };
+
   // Apply initial preferences when room connects and tracks are published
   useEffect(() => {
     if (!room || !localParticipant || initialPreferencesApplied) return;
 
     // Also listen for room connection to apply preferences immediately
     const handleRoomConnected = () => {
-      // Small delay to ensure tracks are published
-      setTimeout(() => {
+      // Apply immediately without delay for video to prevent it from showing
+      if (initialPreferencesApplied) return;
+      
+      // Check tracks immediately
+      const checkAndApply = () => {
         if (initialPreferencesApplied) return;
         
         const audioTracks = Array.from(localParticipant.audioTrackPublications.values());
@@ -71,33 +126,60 @@ const MediaControls = ({
         if (micTrack?.track) {
           const shouldBeMuted = !initialMicEnabled;
           if (shouldBeMuted && !micTrack.track.isMuted) {
+            // Mute immediately - don't await to prevent delay
             micTrack.track.mute().then(() => {
               setIsMicOn(false);
               setStateManuallySet(true);
             }).catch(console.warn);
+            // Set state optimistically
+            setIsMicOn(false);
+            setStateManuallySet(true);
           } else if (!shouldBeMuted && micTrack.track.isMuted) {
             micTrack.track.unmute().then(() => {
               setIsMicOn(true);
               setStateManuallySet(true);
             }).catch(console.warn);
+            setIsMicOn(true);
+            setStateManuallySet(true);
+          } else {
+            setIsMicOn(!shouldBeMuted);
+            setStateManuallySet(true);
           }
         }
 
         if (cameraTrack?.track) {
           const shouldBeMuted = !initialCameraEnabled;
-          if (shouldBeMuted && !cameraTrack.track.isMuted) {
-            cameraTrack.track.mute().then(() => {
-              setIsCameraOn(false);
-              setStateManuallySet(true);
+          if (shouldBeMuted) {
+            // CRITICAL: Disable track IMMEDIATELY (synchronous) to prevent video from showing
+            disableVideoTrack(cameraTrack.track);
+            setIsCameraOn(false);
+            setStateManuallySet(true);
+            
+            // Then unpublish completely (async)
+            stopCameraCompletely().then(() => {
+              setInitialPreferencesApplied(true);
             }).catch(console.warn);
-          } else if (!shouldBeMuted && cameraTrack.track.isMuted) {
-            cameraTrack.track.unmute().then(() => {
-              setIsCameraOn(true);
-              setStateManuallySet(true);
-            }).catch(console.warn);
+            return; // Exit early after stopping camera
+          } else {
+            // Enable track immediately
+            enableVideoTrack(cameraTrack.track);
+            if (cameraTrack.track.isMuted) {
+              cameraTrack.track.unmute().then(() => {
+                setIsCameraOn(true);
+                setStateManuallySet(true);
+              }).catch(console.warn);
+            }
+            setIsCameraOn(true);
+            setStateManuallySet(true);
           }
         }
-      }, 200);
+      };
+      
+      // Try immediately first
+      checkAndApply();
+      
+      // Also try after a small delay as fallback for tracks that publish slightly later
+      setTimeout(checkAndApply, 100);
     };
 
     // Check if room is already connected
@@ -128,16 +210,16 @@ const MediaControls = ({
         // Check if it's an audio track
         if (track.kind === 'audio') {
           if (!initialMicEnabled) {
-            // Mute the track
+            // Mute the track immediately
             if (!track.isMuted) {
-              await track.mute();
+              track.mute().catch(console.warn);
             }
             setIsMicOn(false);
             setStateManuallySet(true);
           } else {
             // Ensure it's unmuted
             if (track.isMuted) {
-              await track.unmute();
+              track.unmute().catch(console.warn);
             }
             setIsMicOn(true);
             setStateManuallySet(true);
@@ -146,16 +228,20 @@ const MediaControls = ({
         // Check if it's a camera video track
         else if (track.kind === 'video' && publication.source === Track.Source.Camera) {
           if (!initialCameraEnabled) {
-            // Mute the track
-            if (!track.isMuted) {
-              await track.mute();
-            }
+            // CRITICAL: Disable track IMMEDIATELY (synchronous) to prevent video from showing
+            disableVideoTrack(track);
             setIsCameraOn(false);
             setStateManuallySet(true);
+            
+            // Then unpublish completely (async)
+            stopCameraCompletely().then(() => {
+              setInitialPreferencesApplied(true);
+            }).catch(console.warn);
           } else {
-            // Ensure it's unmuted
+            // Ensure it's enabled and unmuted
+            enableVideoTrack(track);
             if (track.isMuted) {
-              await track.unmute();
+              track.unmute().catch(console.warn);
             }
             setIsCameraOn(true);
             setStateManuallySet(true);
@@ -189,17 +275,16 @@ const MediaControls = ({
             const shouldBeMuted = !initialMicEnabled;
             
             // Mute/unmute the track directly
-            if (shouldBeMuted) {
-              if (!micTrack.track.isMuted) {
-                await micTrack.track.mute();
-              }
+            if (shouldBeMuted && !micTrack.track.isMuted) {
+              micTrack.track.mute().catch(console.warn);
               setIsMicOn(false);
               setStateManuallySet(true);
-            } else {
-              if (micTrack.track.isMuted) {
-                await micTrack.track.unmute();
-              }
+            } else if (!shouldBeMuted && micTrack.track.isMuted) {
+              micTrack.track.unmute().catch(console.warn);
               setIsMicOn(true);
+              setStateManuallySet(true);
+            } else {
+              setIsMicOn(!shouldBeMuted);
               setStateManuallySet(true);
             }
             micApplied = true;
@@ -217,21 +302,22 @@ const MediaControls = ({
           try {
             const shouldBeMuted = !initialCameraEnabled;
             
-            // Mute/unmute the track directly
             if (shouldBeMuted) {
-              if (!cameraTrack.track.isMuted) {
-                await cameraTrack.track.mute();
-              }
-              setIsCameraOn(false);
+              // Use stopCameraCompletely to fully unpublish and stop the track
+              await stopCameraCompletely();
               setStateManuallySet(true);
+              cameraApplied = true;
             } else {
+              // Enable track immediately
+              enableVideoTrack(cameraTrack.track);
+              // Also unmute it
               if (cameraTrack.track.isMuted) {
-                await cameraTrack.track.unmute();
+                cameraTrack.track.unmute().catch(console.warn);
               }
               setIsCameraOn(true);
               setStateManuallySet(true);
+              cameraApplied = true;
             }
-            cameraApplied = true;
           } catch (error) {
             console.warn('Failed to apply camera preference:', error);
           }
@@ -296,18 +382,26 @@ const MediaControls = ({
       
       if (cameraTrack && cameraTrack.track) {
         const shouldBeMuted = !initialCameraEnabled;
-        if (shouldBeMuted && !cameraTrack.track.isMuted) {
-          cameraTrack.track.mute().then(() => {
-            setIsCameraOn(false);
-            setStateManuallySet(true);
-          }).catch(console.warn);
-        } else if (!shouldBeMuted && cameraTrack.track.isMuted) {
-          cameraTrack.track.unmute().then(() => {
-            setIsCameraOn(true);
-            setStateManuallySet(true);
+        if (shouldBeMuted) {
+          // CRITICAL: Disable track IMMEDIATELY (synchronous) to prevent video from showing
+          disableVideoTrack(cameraTrack.track);
+          setIsCameraOn(false);
+          setStateManuallySet(true);
+          
+          // Then unpublish completely (async)
+          stopCameraCompletely().then(() => {
+            setInitialPreferencesApplied(true);
           }).catch(console.warn);
         } else {
-          setIsCameraOn(!shouldBeMuted);
+          // Enable track immediately
+          enableVideoTrack(cameraTrack.track);
+          if (cameraTrack.track.isMuted) {
+            cameraTrack.track.unmute().then(() => {
+              setIsCameraOn(true);
+              setStateManuallySet(true);
+            }).catch(console.warn);
+          }
+          setIsCameraOn(true);
           setStateManuallySet(true);
         }
       }
@@ -387,7 +481,17 @@ const MediaControls = ({
           await audioTrack.track.unmute();
         }
         // Update state immediately for better UX
-        setIsMicOn(!isMicOn);
+        const newMicState = !isMicOn;
+        setIsMicOn(newMicState);
+        
+        // Optional: Emit socket event for UI sync and analytics
+        if (meetingCode && userName) {
+          emitMediaStateChanged(meetingCode, userName, {
+            isMicOn: newMicState,
+            isCameraOn,
+            isScreenSharing,
+          });
+        }
       } else {
         console.warn('No audio track found to toggle');
       }
@@ -401,23 +505,25 @@ const MediaControls = ({
     if (!localParticipant) return;
 
     try {
-      const cameraTrack = Array.from(localParticipant.videoTrackPublications.values())
-        .find((pub) => pub.source === Track.Source.Camera && pub.track !== undefined);
-      
-      if (cameraTrack?.track) {
-        // Use track's mute/unmute methods
-        if (isCameraOn) {
-          await cameraTrack.track.mute();
-        } else {
-          await cameraTrack.track.unmute();
-        }
-        // Update state immediately for better UX
-        setIsCameraOn(!isCameraOn);
+      if (isCameraOn) {
+        // TURN OFF → unpublish completely
+        await stopCameraCompletely();
       } else {
-        console.warn('No camera track found to toggle');
+        // TURN ON → publish fresh camera track
+        await localParticipant.setCameraEnabled(true);
+        setIsCameraOn(true);
       }
-    } catch (error) {
-      console.error('Failed to toggle camera:', error);
+      
+      // Emit socket event for UI sync and analytics
+      if (meetingCode && userName) {
+        emitMediaStateChanged(meetingCode, userName, {
+          isMicOn,
+          isCameraOn: !isCameraOn,
+          isScreenSharing,
+        });
+      }
+    } catch (e) {
+      console.error('Camera toggle failed:', e);
     }
   };
 
@@ -435,6 +541,15 @@ const MediaControls = ({
         if (screenTrack) {
           await localParticipant.unpublishTrack(screenTrack.track!);
           setIsScreenSharing(false);
+          
+          // Optional: Emit socket event for UI sync and analytics
+          if (meetingCode && userName) {
+            emitMediaStateChanged(meetingCode, userName, {
+              isMicOn,
+              isCameraOn,
+              isScreenSharing: false,
+            });
+          }
         }
       } else {
         // Start screen sharing
@@ -465,6 +580,15 @@ const MediaControls = ({
           };
 
           setIsScreenSharing(true);
+          
+          // Optional: Emit socket event for UI sync and analytics
+          if (meetingCode && userName) {
+            emitMediaStateChanged(meetingCode, userName, {
+              isMicOn,
+              isCameraOn,
+              isScreenSharing: true,
+            });
+          }
         } catch (error: any) {
           if (error.name === 'NotAllowedError') {
             console.error('Screen sharing permission denied');

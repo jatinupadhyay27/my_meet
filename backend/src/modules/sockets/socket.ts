@@ -31,6 +31,15 @@ interface SendReactionPayload {
   sender: string;
 }
 
+interface MediaStateChangedPayload {
+  meetingCode: string;
+  userName: string;
+  isMicOn: boolean;
+  isCameraOn: boolean;
+  isScreenSharing: boolean;
+  timestamp: string;
+}
+
 let io: SocketIOServer | null = null;
 
 /**
@@ -161,6 +170,34 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       });
 
       console.log(`Reaction in ${meetingCode} from ${sender}: ${reaction}`);
+    });
+
+    /**
+     * Event: media-state-changed (Optional - for UI sync and analytics)
+     * Payload: { meetingCode: string, userName: string, isMicOn: boolean, isCameraOn: boolean, isScreenSharing: boolean, timestamp: string }
+     * 
+     * Behavior:
+     * - Broadcasts media state change to room members (optional)
+     * - Can be used for UI sync and future analytics
+     * - Minimal implementation - just logs for now
+     */
+    socket.on('media-state-changed', (payload: MediaStateChangedPayload) => {
+      const { meetingCode, userName, isMicOn, isCameraOn, isScreenSharing } = payload;
+
+      if (!meetingCode || !userName) {
+        return;
+      }
+
+      // Optional: Broadcast to room members for UI sync
+      // Currently just logging - can be extended for analytics
+      console.log(`Media state changed in ${meetingCode} by ${userName}:`, {
+        isMicOn,
+        isCameraOn,
+        isScreenSharing,
+      });
+
+      // Future: Can broadcast to room for UI sync
+      // io?.to(meetingCode).emit('media-state-updated', payload);
     });
 
     /**
