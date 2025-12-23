@@ -14,4 +14,14 @@ export interface TranscriptSummary {
   createdAt: string;
 }
 
+export interface Transcript {
+  id: string;
+  meetingId: string;
+  rawText: string;
+  language: string;
+  duration?: number | null;
+  source: string;
+  createdAt: string;
+}
+
 

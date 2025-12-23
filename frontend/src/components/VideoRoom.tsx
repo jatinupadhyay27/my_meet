@@ -102,47 +102,13 @@ const RoomContent = ({
 }) => {
   const room = useRoomContext();
   const [isConnected, setIsConnected] = useState(false);
-  const [participants, setParticipants] = useState<Array<any>>([]);
-
-  // Get all video tracks from participants (filter out placeholders)
-  const allTracks = useTracks(
+  const tracks = useTracks(
     [
       { source: Track.Source.Camera, withPlaceholder: true },
       { source: Track.Source.ScreenShare, withPlaceholder: true },
     ],
     { onlySubscribed: false }
   );
-
-  // Filter out placeholder tracks - VideoTrack only accepts actual TrackReference
-  const tracks = allTracks.filter((track) => track.publication !== undefined);
-
-  // Get all participants (including those without camera tracks)
-  useEffect(() => {
-    if (!room) return;
-
-    const updateParticipants = () => {
-      const allParticipants = Array.from(room.remoteParticipants.values());
-      // Include local participant
-      if (room.localParticipant) {
-        setParticipants([room.localParticipant, ...allParticipants]);
-      } else {
-        setParticipants(allParticipants);
-      }
-    };
-
-    updateParticipants();
-
-    const handleParticipantConnected = () => updateParticipants();
-    const handleParticipantDisconnected = () => updateParticipants();
-
-    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
-
-    return () => {
-      room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
-      room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
-    };
-  }, [room]);
 
   // Set up event listeners
   useEffect(() => {
@@ -195,178 +161,48 @@ const RoomContent = ({
     );
   }
 
-  // Check if we have any participants (including those without tracks)
-  const hasParticipants = participants.length > 0 || tracks.length > 0;
-  
-  if (!hasParticipants) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-        <div className="text-center text-sm text-slate-400">
-          <p>Waiting for participants to join...</p>
-          <p className="mt-1 text-xs">Video will appear here when others join</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Separate screen shares from camera tracks
-  const screenShares = tracks.filter((track) => track.source === Track.Source.ScreenShare);
-  const cameraTracks = tracks.filter((track) => track.source === Track.Source.Camera);
-
-  // If screen share exists, show it big with small participant videos
-  if (screenShares.length > 0) {
-    return (
-      <div className="flex h-full gap-2 p-2">
-        {/* Main screen share - takes most of the space */}
-        <div className="flex-1">
-          {screenShares.map((track) => {
-            const participant = track.participant;
-            return (
-              <div
-                key={`${participant.identity}-${track.publication?.trackSid || 'unknown'}`}
-                className="relative h-full w-full overflow-hidden rounded-lg ring-2 ring-blue-500"
-              >
-                <VideoTrack
-                  trackRef={track}
-                  className="h-full w-full object-cover"
-                />
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-white">
-                      {participant.identity || 'Participant'} - Screen Share
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        
-        {/* Small participant videos on the right */}
-        {participants.length > 0 && (
-          <div className="flex w-64 flex-col gap-2 overflow-y-auto">
-            {participants.map((participant) => {
-              // Find camera track for this participant
-              const cameraTrack = cameraTracks.find(
-                (track) => track.participant.identity === participant.identity
-              );
-              // Check if camera is off (no video track, muted, unpublished, or disabled)
-              const track = cameraTrack?.publication?.track;
-              const isTrackDisabled = track && (
-                (track as any).mediaStreamTrack?.enabled === false ||
-                (track as any).track?.enabled === false ||
-                (track as any).enabled === false
-              );
-              const isCameraOff = !cameraTrack || !track || cameraTrack.publication?.isMuted || isTrackDisabled || false;
-              const audioTrack = Array.from(participant.audioTrackPublications.values()).find(
-                (pub: any) => pub.track !== undefined
-              );
-              const isMicMuted = (audioTrack as any)?.isMuted ?? false;
-
-              return (
-                <div
-                  key={`${participant.identity}-${cameraTrack?.publication?.trackSid || 'no-camera'}`}
-                  className="relative aspect-video w-full overflow-hidden rounded-lg"
-                >
-                  {isCameraOff ? (
-                    <div className="flex h-full w-full items-center justify-center bg-slate-800">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-700 text-lg font-semibold text-slate-300">
-                          {participant.identity?.charAt(0).toUpperCase() || '?'}
-                        </div>
-                        <p className="text-xs text-slate-400">{participant.identity || 'Participant'}</p>
-                      </div>
-                    </div>
-                  ) : cameraTrack ? (
-                    <VideoTrack
-                      trackRef={cameraTrack}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : null}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-white truncate">
-                        {participant.identity || 'Participant'}
-                      </span>
-                      {isMicMuted && (
-                        <div className="flex h-4 w-4 items-center justify-center rounded-full bg-red-600">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-3 w-3 text-white"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                            />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // No screen share - show camera videos in full screen grid
-  // Use participants list to include those without camera tracks
-  const participantsToShow = participants.length > 0 ? participants : 
-    cameraTracks.map(track => track.participant);
-  
-  const gridCols =
-    participantsToShow.length === 1
-      ? 'grid-cols-1'
-      : participantsToShow.length === 2
-        ? 'grid-cols-2'
-        : 'grid-cols-2 lg:grid-cols-3';
+  const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
 
   return (
-    <div className={`grid ${gridCols} h-full gap-2 p-2`}>
-      {participantsToShow.map((participant) => {
-        // Find camera track for this participant
-        const cameraTrack = cameraTracks.find(
-          (track) => track.participant.identity === participant.identity && 
-                     track.source === Track.Source.Camera
-        );
-        
-        // Check if camera is off (no video track, muted, unpublished, or disabled)
-        const track = cameraTrack?.publication?.track;
-        const isTrackDisabled = track && (
-          (track as any).mediaStreamTrack?.enabled === false ||
-          (track as any).track?.enabled === false ||
-          (track as any).enabled === false
-        );
-        const isCameraOff = !cameraTrack || !track || cameraTrack.publication?.isMuted || isTrackDisabled || false;
-        
-        // Check if mic is muted
-        const audioTrack = Array.from(participant.audioTrackPublications.values()).find(
+    <div
+      className={`grid ${
+        cameraTracks.length === 1
+          ? 'grid-cols-1'
+          : cameraTracks.length === 2
+          ? 'grid-cols-2'
+          : 'grid-cols-2 lg:grid-cols-3'
+      } h-full gap-2 p-2`}
+    >
+      {cameraTracks.map((trackRef) => {
+        const participant = trackRef.participant;
+        const isLocal = participant.isLocal;
+        const publication = trackRef.publication;
+        const videoTrack = publication?.track;
+        const isTrackDisabled =
+          (videoTrack as any)?.mediaStreamTrack?.enabled === false ||
+          (videoTrack as any)?.track?.enabled === false ||
+          (videoTrack as any)?.enabled === false;
+        const isCameraOff = !videoTrack || publication?.isMuted || isTrackDisabled || false;
+
+        const audioTrackPub = Array.from(participant.audioTrackPublications.values()).find(
           (pub: any) => pub.track !== undefined
         );
-        const isMicMuted = (audioTrack as any)?.isMuted ?? false;
-        
-        // Check if participant is screen sharing
-        const screenShareTrack = screenShares.find(
-          (track) => track.participant.identity === participant.identity
-        );
-        const isScreenShare = !!screenShareTrack;
+        const isMicMuted = (audioTrackPub as any)?.isMuted ?? false;
+
+        const hasActiveVideo = !!(videoTrack && !isTrackDisabled && !publication?.isMuted);
 
         return (
           <div
-            key={`${participant.identity}-${cameraTrack?.publication?.trackSid || 'no-camera'}`}
-            className="relative h-full w-full overflow-hidden rounded-lg"
+            key={trackRef.publication?.trackSid || participant.identity}
+            className="relative overflow-hidden rounded-lg"
           >
-            {isCameraOff ? (
-              // Camera off placeholder with avatar (centered like Google Meet/Zoom)
-              <div className="flex h-full w-full items-center justify-center bg-slate-800">
+            {hasActiveVideo ? (
+              <VideoTrack
+                trackRef={trackRef as any}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full min-h-48 w-full items-center justify-center bg-slate-800">
                 <div className="flex flex-col items-center gap-2">
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-700 text-2xl font-semibold text-slate-300">
                     {participant.identity?.charAt(0).toUpperCase() || '?'}
@@ -374,28 +210,16 @@ const RoomContent = ({
                   <p className="text-sm text-slate-400">{participant.identity || 'Participant'}</p>
                 </div>
               </div>
-            ) : cameraTrack ? (
-              <VideoTrack
-                trackRef={cameraTrack}
-                className="h-full w-full object-cover"
-              />
-            ) : null}
+            )}
 
-            {/* Overlay with participant info and indicators */}
+            {/* Name + indicators */}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-white">
-                    {participant.identity || 'Participant'}
-                  </span>
-                  {isScreenShare && (
-                    <span className="rounded bg-blue-600 px-1.5 py-0.5 text-xs font-medium text-white">
-                      Screen
-                    </span>
-                  )}
-                </div>
+                <span className="text-xs font-medium text-white">
+                  {participant.identity}
+                  {isLocal && ' (You)'}
+                </span>
                 <div className="flex items-center gap-1">
-                  {/* Mic muted indicator */}
                   {isMicMuted && (
                     <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600">
                       <svg
@@ -420,7 +244,6 @@ const RoomContent = ({
                       </svg>
                     </div>
                   )}
-                  {/* Camera off indicator */}
                   {isCameraOff && (
                     <div className="flex h-6 w-6 items-center justify-center rounded-full bg-red-600">
                       <svg

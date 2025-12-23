@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { clearMeeting } from '../store/slices/meetingSlice';
 import { getMeetingByCode } from '../services/meetingApi';
+import { transcribeMeeting } from '../services/aiApi';
 import {
   connectSocket,
   joinMeeting,
@@ -16,6 +17,7 @@ import {
 import { generateLiveKitToken } from '../services/livekitApi';
 import VideoRoom from '../components/VideoRoom';
 import ChatReactionsOverlay from '../components/ChatReactionsOverlay';
+import TranscriptViewer from '../components/TranscriptViewer';
 
 interface ChatMessage {
   message: string;
@@ -70,6 +72,11 @@ const MeetingRoomPage = () => {
   const [liveKitUrl, setLiveKitUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(false);
+  const [isProcessingRecording, setIsProcessingRecording] = useState(false);
+  const [transcriptionStatus, setTranscriptionStatus] = useState<string | null>(null);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+  const [transcriptText, setTranscriptText] = useState<string | null>(null);
+  const hasRequestedTranscription = useRef(false);
 
   // Scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -80,6 +87,14 @@ const MeetingRoomPage = () => {
   useEffect(() => {
     reactionsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [reactions]);
+
+  useEffect(() => {
+    hasRequestedTranscription.current = false;
+    setTranscriptText(null);
+    setTranscriptionStatus(null);
+    setTranscriptionError(null);
+    setIsProcessingRecording(false);
+  }, [meetingCode]);
 
   // Fetch meeting details
   useEffect(() => {
@@ -215,6 +230,28 @@ const MeetingRoomPage = () => {
     }
   };
 
+  const processTranscription = async () => {
+    if (!meetingCode || hasRequestedTranscription.current) {
+      return;
+    }
+
+    hasRequestedTranscription.current = true;
+    setIsProcessingRecording(true);
+    setTranscriptionStatus('Processing recording...');
+    setTranscriptionError(null);
+
+    try {
+      const response = await transcribeMeeting(meetingCode);
+      setTranscriptText(response.text || response.transcript?.rawText || null);
+      setTranscriptionStatus(response.message || 'Transcription completed');
+    } catch (err) {
+      setTranscriptionError(err instanceof Error ? err.message : 'Failed to process recording');
+      setTranscriptionStatus('Transcription failed');
+    } finally {
+      setIsProcessingRecording(false);
+    }
+  };
+
   const handleToggleChat = () => {
     setIsChatOpen((prev) => !prev);
   };
@@ -223,11 +260,20 @@ const MeetingRoomPage = () => {
     setIsReactionsOpen((prev) => !prev);
   };
 
-  const handleEndOrLeaveMeeting = () => {
+  const handleEndOrLeaveMeeting = async () => {
+    if (isProcessingRecording) return;
+
     if (meetingCode && userName) {
       leaveMeeting(meetingCode, userName);
     }
     disconnectSocket();
+    setLiveKitToken(null);
+    setLiveKitUrl(null);
+    await processTranscription();
+    dispatch(clearMeeting());
+  };
+
+  const handleReturnHome = () => {
     dispatch(clearMeeting());
     navigate('/join');
   };
@@ -453,9 +499,23 @@ const MeetingRoomPage = () => {
           onClick={handleEndOrLeaveMeeting}
           className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-slate-900"
         >
-          Leave Meeting
+          Leave & Process Recording
         </button>
       </div>
+
+      {(isProcessingRecording || transcriptionStatus || transcriptionError) && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            transcriptionError
+              ? 'border-red-700 bg-red-900/20 text-red-200'
+              : 'border-slate-700 bg-slate-900/60 text-slate-200'
+          }`}
+        >
+          {isProcessingRecording && <span>Processing recording...</span>}
+          {!isProcessingRecording && transcriptionStatus && <span>{transcriptionStatus}</span>}
+          {transcriptionError && <span className="block text-red-200">{transcriptionError}</span>}
+        </div>
+      )}
 
       {/* Full screen video room */}
       <div className="relative h-[calc(100vh-12rem)] w-full">
@@ -514,6 +574,21 @@ const MeetingRoomPage = () => {
           commonReactions={commonReactions}
           userName={userName}
         />
+      </div>
+
+      <TranscriptViewer
+        transcriptText={transcriptText}
+        isLoading={isProcessingRecording}
+        error={transcriptionError}
+      />
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleReturnHome}
+          className="mt-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 transition-colors hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+        >
+          Back to Join Page
+        </button>
       </div>
     </section>
   );

@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
+import { startRecording, stopRecording } from '../recording/recording.service';
 
 /**
  * Socket.io server for real-time communication
@@ -41,6 +42,34 @@ interface MediaStateChangedPayload {
 }
 
 let io: SocketIOServer | null = null;
+const meetingParticipants = new Map<string, Set<string>>();
+
+async function handleParticipantJoin(meetingCode: string, socketId: string) {
+  const participants = meetingParticipants.get(meetingCode) ?? new Set<string>();
+  const wasEmpty = participants.size === 0;
+  participants.add(socketId);
+  meetingParticipants.set(meetingCode, participants);
+
+  if (wasEmpty) {
+    // Trigger recording automatically when first participant joins
+    await startRecording(meetingCode);
+    console.log(`Recording started for meeting ${meetingCode}`);
+  }
+}
+
+async function handleParticipantLeave(meetingCode: string, socketId: string) {
+  const participants = meetingParticipants.get(meetingCode);
+  if (!participants) return;
+
+  participants.delete(socketId);
+  if (participants.size === 0) {
+    meetingParticipants.delete(meetingCode);
+    await stopRecording(meetingCode);
+    console.log(`Recording stopped for meeting ${meetingCode}`);
+  } else {
+    meetingParticipants.set(meetingCode, participants);
+  }
+}
 
 /**
  * Initialize Socket.io server and attach to HTTP server
@@ -66,7 +95,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
      * - Socket joins room with meetingCode
      * - Broadcasts "user-joined" to other room members
      */
-    socket.on('join-meeting', (payload: JoinMeetingPayload) => {
+    socket.on('join-meeting', async (payload: JoinMeetingPayload) => {
       const { meetingCode, userName } = payload;
 
       if (!meetingCode || !userName) {
@@ -77,6 +106,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       // Join the room (room name is the meetingCode)
       socket.join(meetingCode);
       console.log(`Socket ${socket.id} (${userName}) joined meeting: ${meetingCode}`);
+      await handleParticipantJoin(meetingCode, socket.id);
 
       // Notify others in the room (excluding the sender)
       socket.to(meetingCode).emit('user-joined', {
@@ -101,7 +131,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
      * - Remove socket from room
      * - Broadcast "user-left" to room members
      */
-    socket.on('leave-meeting', (payload: { meetingCode: string; userName: string }) => {
+    socket.on('leave-meeting', async (payload: { meetingCode: string; userName: string }) => {
       const { meetingCode, userName } = payload;
 
       if (!meetingCode) {
@@ -111,6 +141,7 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
       // Leave the room
       socket.leave(meetingCode);
       console.log(`Socket ${socket.id} (${userName}) left meeting: ${meetingCode}`);
+      await handleParticipantLeave(meetingCode, socket.id);
 
       // Notify others in the room
       socket.to(meetingCode).emit('user-left', {
@@ -207,22 +238,23 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
      * - Handle cleanup when socket disconnects
      * - Notify room members if socket was in a room
      */
-    socket.on('disconnect', (reason) => {
+    socket.on('disconnect', async (reason) => {
       console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
 
       // Get all rooms this socket was in
       const rooms = Array.from(socket.rooms);
       
       // Notify each room that this socket left
-      rooms.forEach((room) => {
+      for (const room of rooms) {
         // Skip the socket's own room (socket.id)
         if (room !== socket.id) {
           socket.to(room).emit('user-left', {
             socketId: socket.id,
             timestamp: new Date().toISOString(),
           });
+          await handleParticipantLeave(room, socket.id);
         }
-      });
+      }
     });
   });
 

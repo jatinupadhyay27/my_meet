@@ -623,3 +623,64 @@ NOTES FOR FUTURE DEVELOPMENT
 
 ================================================================================
 
+DAY 6 – RECORDING & AI TRANSCRIPTION
+================================================================================
+
+WHAT WAS IMPLEMENTED:
+---------------------
+
+1. Meeting Audio Recording (server-assisted)
+   - Automatic start when first participant joins, stop when last leaves
+   - Storage directory: backend/uploads/recordings/
+   - File naming: {meetingCode}_{timestamp}.mp3 (mock placeholder until LiveKit recorder wired)
+   - Recording lifecycle handled via Socket.io join/leave in backend/src/modules/sockets/socket.ts
+
+2. AI Transcription Service (Mock Whisper abstraction)
+   - Service: backend/src/modules/ai/ai.transcription.service.ts
+   - Provider abstraction to swap Whisper/OpenAI later
+   - Mock provider returns deterministic transcript with timestamps and future markers
+
+3. Transcription API
+   - Endpoint: POST /api/ai/transcribe { meetingCode }
+   - Controller: backend/src/modules/ai/ai.controller.ts
+   - Route wiring: backend/src/modules/ai/ai.routes.ts + backend/src/routes/index.ts
+   - Looks up latest recording, transcribes, persists transcript, returns text/segments
+
+4. Database Schema Update
+   - Prisma model Transcript: id, meetingId, rawText, language, duration, source, createdAt
+   - Schema file: backend/prisma/schema.prisma
+   - Run migrations: cd backend && npx prisma migrate dev --name day6_transcripts
+
+5. Frontend Meeting End Flow
+   - MeetingRoomPage shows “Processing recording...” when leaving
+   - Calls /api/ai/transcribe after disconnect to fetch transcript
+   - Success/error messaging shown inline
+
+6. Transcript Viewer UI
+   - Component: frontend/src/components/TranscriptViewer.tsx
+   - Simple scrollable transcript text, placeholders for diarization/summary/TTS
+
+WHY THESE FEATURES:
+-------------------
+- Recording is required to capture meeting audio for compliance, notes, and later AI features.
+- AI transcription converts raw audio into searchable, readable text.
+- Raw audio vs transcript: audio is the source of truth; transcript is derived text that can be indexed, summarized, and analyzed.
+- Abstraction allows swapping Whisper/OpenAI or on-prem models without changing controllers.
+- This foundation prepares Day 7 for speaker identification (diarization) and summaries, and Day 8 for TTS/audio summaries.
+
+WHERE IT LIVES:
+---------------
+- Recording lifecycle: backend/src/modules/sockets/socket.ts and backend/src/modules/recording/recording.service.ts
+- Audio storage: backend/uploads/recordings/
+- AI transcription: backend/src/modules/ai/ai.transcription.service.ts
+- API controller/route: backend/src/modules/ai/ai.controller.ts, backend/src/modules/ai/ai.routes.ts
+- Prisma schema: backend/prisma/schema.prisma
+- Frontend flow: frontend/src/pages/MeetingRoomPage.tsx
+- Transcript UI: frontend/src/components/TranscriptViewer.tsx
+
+NOTES / FUTURE MARKERS:
+-----------------------
+- Speaker diarization added in Day 7
+- Summary generation added in Day 7
+- Audio summary (TTS) added in Day 8
+

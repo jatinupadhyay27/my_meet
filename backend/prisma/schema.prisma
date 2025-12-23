@@ -31,11 +31,13 @@ model Meeting {
 
 model Transcript {
   id        String   @id @default(cuid())
-  content   String
-  summary   String?
-  createdAt DateTime @default(now())
   meeting   Meeting  @relation(fields: [meetingId], references: [id])
   meetingId String
+  rawText   String
+  language  String   @default("en")
+  duration  Float?
+  source    String   @default("whisper")
+  createdAt DateTime @default(now())
 }
 
 
