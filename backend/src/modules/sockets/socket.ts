@@ -41,6 +41,13 @@ interface MediaStateChangedPayload {
   timestamp: string;
 }
 
+interface RaiseHandPayload {
+  meetingCode: string;
+  userName: string;
+  isRaised: boolean;
+  timestamp: string;
+}
+
 let io: SocketIOServer | null = null;
 const meetingParticipants = new Map<string, Set<string>>();
 
@@ -229,6 +236,32 @@ export function initializeSocket(httpServer: HTTPServer): SocketIOServer {
 
       // Future: Can broadcast to room for UI sync
       // io?.to(meetingCode).emit('media-state-updated', payload);
+    });
+
+    /**
+     * Event: raise-hand
+     * Payload: { meetingCode: string, userName: string, isRaised: boolean, timestamp: string }
+     * 
+     * Behavior:
+     * - Broadcasts raise hand state to all members in the room
+     */
+    socket.on('raise-hand', (payload: RaiseHandPayload) => {
+      const { meetingCode, userName, isRaised } = payload;
+
+      if (!meetingCode || !userName) {
+        socket.emit('error', { message: 'meetingCode and userName are required' });
+        return;
+      }
+
+      // Broadcast raise hand state to all in the room (including sender)
+      io?.to(meetingCode).emit('raise-hand-updated', {
+        meetingCode,
+        userName,
+        isRaised,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(`Raise hand in ${meetingCode} by ${userName}: ${isRaised ? 'raised' : 'lowered'}`);
     });
 
     /**

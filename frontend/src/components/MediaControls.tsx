@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Track, RoomEvent } from 'livekit-client';
 import { useLocalParticipant, useRoomContext } from '@livekit/components-react';
-import { emitMediaStateChanged } from '../services/socket.service';
+import { emitMediaStateChanged, raiseHand } from '../services/socket.service';
 
 /**
  * MediaControls component for meeting media controls
@@ -26,8 +26,10 @@ interface MediaControlsProps {
   initialCameraEnabled?: boolean;
   onToggleChat?: () => void;
   onToggleReactions?: () => void;
+  onToggleParticipants?: () => void;
   isChatOpen?: boolean;
   isReactionsOpen?: boolean;
+  isParticipantsOpen?: boolean;
 }
 
 const MediaControls = ({ 
@@ -38,8 +40,10 @@ const MediaControls = ({
   initialCameraEnabled = true,
   onToggleChat, 
   onToggleReactions,
+  onToggleParticipants,
   isChatOpen = false,
-  isReactionsOpen = false
+  isReactionsOpen = false,
+  isParticipantsOpen = false
 }: MediaControlsProps) => {
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
@@ -50,6 +54,7 @@ const MediaControls = ({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isSharingLoading, setIsSharingLoading] = useState(false);
   const [initialPreferencesApplied, setInitialPreferencesApplied] = useState(false);
+  const [isHandRaised, setIsHandRaised] = useState(false);
   
   // Track if we've manually set the state (to prevent sync from overriding)
   const [stateManuallySet, setStateManuallySet] = useState(false);
@@ -634,13 +639,22 @@ const MediaControls = ({
     }
   };
 
+  // Handle raise hand toggle
+  const handleToggleRaiseHand = () => {
+    if (meetingCode && userName) {
+      const newRaisedState = !isHandRaised;
+      setIsHandRaised(newRaisedState);
+      raiseHand(meetingCode, userName, newRaisedState);
+    }
+  };
+
   // Don't render controls until local participant is available
   if (!localParticipant) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 transform">
+    <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2 transform">
       <div className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-900/95 px-4 py-3 shadow-lg backdrop-blur-sm">
         {/* Microphone Toggle */}
         <button
@@ -848,8 +862,66 @@ const MediaControls = ({
           </button>
         )}
 
+        {/* Participants Toggle */}
+        {onToggleParticipants && (
+          <button
+            onClick={onToggleParticipants}
+            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+              isParticipantsOpen
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+            title={isParticipantsOpen ? 'Close participants' : 'Open participants'}
+            aria-label={isParticipantsOpen ? 'Close participants' : 'Open participants'}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          </button>
+        )}
+
+        {/* Raise Hand Button */}
+        {meetingCode && userName && (
+          <button
+            onClick={handleToggleRaiseHand}
+            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+              isHandRaised
+                ? 'bg-yellow-600 text-white hover:bg-yellow-700'
+                : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+            title={isHandRaised ? 'Lower hand' : 'Raise hand'}
+            aria-label={isHandRaised ? 'Lower hand' : 'Raise hand'}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
+              />
+            </svg>
+          </button>
+        )}
+
         {/* Divider */}
-        {(onToggleChat || onToggleReactions) && (
+        {(onToggleChat || onToggleReactions || onToggleParticipants) && (
           <div className="h-8 w-px bg-slate-600" />
         )}
 

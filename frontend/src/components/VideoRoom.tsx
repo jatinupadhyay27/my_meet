@@ -6,9 +6,11 @@ import {
   useTracks,
   RoomAudioRenderer,
   useRoomContext,
+  useLocalParticipant,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import MediaControls from './MediaControls';
+import ParticipantsList from './ParticipantsList';
 
 /**
  * VideoRoom component for LiveKit video/audio conferencing
@@ -36,8 +38,12 @@ interface VideoRoomProps {
   onLeave?: () => void;
   onToggleChat?: () => void;
   onToggleReactions?: () => void;
+  onToggleParticipants?: () => void;
   isChatOpen?: boolean;
   isReactionsOpen?: boolean;
+  isParticipantsOpen?: boolean;
+  raisedHands?: Set<string>;
+  onRoomReady?: (room: any) => void;
 }
 
 const VideoRoom = ({ 
@@ -51,38 +57,66 @@ const VideoRoom = ({
   onLeave,
   onToggleChat,
   onToggleReactions,
+  onToggleParticipants,
   isChatOpen,
-  isReactionsOpen
+  isReactionsOpen,
+  isParticipantsOpen,
+  raisedHands = new Set(),
+  onRoomReady
 }: VideoRoomProps) => {
   // Handle connection errors
   const handleError = (err: Error) => {
     console.error('LiveKit connection error:', err);
   };
 
+  // Don't render if token is invalid/null
+  if (!token || !serverUrl) {
+    return null;
+  }
+
   return (
-    <LiveKitRoom
-      video={initialCameraEnabled}
-      audio={true}
-      token={token}
-      serverUrl={serverUrl}
-      connect={true}
-      onError={handleError}
-      className="h-full w-full"
-    >
-      <RoomContent meetingCode={meetingCode} userName={userName} onDisconnect={onDisconnect} onLeave={onLeave} />
-      <RoomAudioRenderer />
-      <MediaControls 
-        meetingCode={meetingCode} 
-        userName={userName}
-        initialMicEnabled={initialMicEnabled}
-        initialCameraEnabled={initialCameraEnabled}
-        onLeave={onLeave}
-        onToggleChat={onToggleChat}
-        onToggleReactions={onToggleReactions}
-        isChatOpen={isChatOpen}
-        isReactionsOpen={isReactionsOpen}
-      />
-    </LiveKitRoom>
+    <div className="relative h-full w-full bg-slate-900 rounded-lg overflow-hidden">
+      <LiveKitRoom
+        video={initialCameraEnabled}
+        audio={true}
+        token={token}
+        serverUrl={serverUrl}
+        connect={true}
+        onError={handleError}
+        className="h-full w-full relative"
+      >
+        <RoomContent 
+          meetingCode={meetingCode} 
+          userName={userName} 
+          onDisconnect={onDisconnect} 
+          onLeave={onLeave}
+          raisedHands={raisedHands}
+          onRoomReady={onRoomReady}
+        />
+        <RoomAudioRenderer />
+        <MediaControls 
+          meetingCode={meetingCode} 
+          userName={userName}
+          initialMicEnabled={initialMicEnabled}
+          initialCameraEnabled={initialCameraEnabled}
+          onLeave={onLeave}
+          onToggleChat={onToggleChat}
+          onToggleReactions={onToggleReactions}
+          onToggleParticipants={onToggleParticipants}
+          isChatOpen={isChatOpen}
+          isReactionsOpen={isReactionsOpen}
+          isParticipantsOpen={isParticipantsOpen}
+        />
+        {onToggleParticipants && token && (
+          <ParticipantsList
+            isOpen={isParticipantsOpen || false}
+            onClose={onToggleParticipants}
+            userName={userName}
+            raisedHands={raisedHands}
+          />
+        )}
+      </LiveKitRoom>
+    </div>
   );
 };
 
@@ -93,14 +127,19 @@ const RoomContent = ({
   meetingCode, 
   userName,
   onDisconnect,
-  onLeave 
+  onLeave,
+  raisedHands = new Set(),
+  onRoomReady
 }: { 
   meetingCode: string; 
   userName: string;
   onDisconnect?: () => void;
   onLeave?: () => void;
+  raisedHands?: Set<string>;
+  onRoomReady?: (room: any) => void;
 }) => {
   const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
   const [isConnected, setIsConnected] = useState(false);
   const tracks = useTracks(
     [
@@ -117,6 +156,10 @@ const RoomContent = ({
     const handleConnected = () => {
       console.log('Connected to LiveKit room:', meetingCode);
       setIsConnected(true);
+      // Notify parent that room is ready
+      if (onRoomReady && room) {
+        onRoomReady(room);
+      }
     };
 
     const handleDisconnected = (reason?: DisconnectReason) => {
@@ -163,6 +206,58 @@ const RoomContent = ({
 
   const cameraTracks = tracks.filter((t) => t.source === Track.Source.Camera);
 
+  // Show placeholder if no tracks yet, but show local participant placeholder
+  if (cameraTracks.length === 0) {
+    return (
+      <div className="grid grid-cols-1 h-full gap-2 p-2 bg-slate-900">
+        {localParticipant && (
+          <div className="relative overflow-hidden rounded-lg bg-slate-800 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-700 text-2xl font-semibold text-slate-300">
+                {localParticipant.identity?.charAt(0).toUpperCase() || userName?.charAt(0).toUpperCase() || '?'}
+              </div>
+              <p className="text-sm text-slate-400">
+                {localParticipant.identity || userName || 'You'}
+                <span className="ml-1 text-xs">(You)</span>
+              </p>
+              <p className="text-xs text-slate-500">Camera is off</p>
+            </div>
+            {/* Name + indicators */}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-white">
+                  {localParticipant.identity || userName || 'You'} (You)
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+        {!localParticipant && (
+          <div className="flex h-full w-full items-center justify-center">
+            <div className="text-center text-slate-400">
+              <div className="mb-4">
+                <svg
+                  className="mx-auto h-12 w-12 text-slate-600 animate-pulse"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm font-medium">Connecting...</p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className={`grid ${
@@ -171,7 +266,7 @@ const RoomContent = ({
           : cameraTracks.length === 2
           ? 'grid-cols-2'
           : 'grid-cols-2 lg:grid-cols-3'
-      } h-full gap-2 p-2`}
+      } h-full gap-2 p-2 bg-slate-900`}
     >
       {cameraTracks.map((trackRef) => {
         const participant = trackRef.participant;
@@ -191,6 +286,9 @@ const RoomContent = ({
 
         const hasActiveVideo = !!(videoTrack && !isTrackDisabled && !publication?.isMuted);
 
+        const participantIdentity = participant.identity || '';
+        const isHandRaised = raisedHands.has(participantIdentity);
+
         return (
           <div
             key={trackRef.publication?.trackSid || participant.identity}
@@ -199,7 +297,7 @@ const RoomContent = ({
             {hasActiveVideo ? (
               <VideoTrack
                 trackRef={trackRef as any}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-cover bg-slate-800"
               />
             ) : (
               <div className="flex h-full min-h-48 w-full items-center justify-center bg-slate-800">
@@ -209,6 +307,27 @@ const RoomContent = ({
                   </div>
                   <p className="text-sm text-slate-400">{participant.identity || 'Participant'}</p>
                 </div>
+              </div>
+            )}
+
+            {/* Raise Hand Indicator - Top Left */}
+            {isHandRaised && (
+              <div className="absolute top-2 left-2 z-10 flex items-center gap-1 rounded-full bg-yellow-500/90 px-2 py-1 shadow-lg">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-4 w-4 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
+                  />
+                </svg>
+                <span className="text-xs font-medium text-white">Hand Raised</span>
               </div>
             )}
 

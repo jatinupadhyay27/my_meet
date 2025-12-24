@@ -37,6 +37,12 @@ interface ReactionEvent {
   timestamp: string;
 }
 
+interface RaiseHandEvent {
+  userName: string;
+  isRaised: boolean;
+  timestamp: string;
+}
+
 const MeetingRoomPage = () => {
   const { meetingCode } = useParams<{ meetingCode: string }>();
   const dispatch = useAppDispatch();
@@ -66,6 +72,8 @@ const MeetingRoomPage = () => {
   // Overlay state
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isReactionsOpen, setIsReactionsOpen] = useState(false);
+  const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
   
   // LiveKit state
   const [liveKitToken, setLiveKitToken] = useState<string | null>(null);
@@ -77,6 +85,8 @@ const MeetingRoomPage = () => {
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
   const [transcriptText, setTranscriptText] = useState<string | null>(null);
   const hasRequestedTranscription = useRef(false);
+  const [hasLeftMeeting, setHasLeftMeeting] = useState(false);
+  const liveKitRoomRef = useRef<any>(null);
 
   // Scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -94,6 +104,8 @@ const MeetingRoomPage = () => {
     setTranscriptionStatus(null);
     setTranscriptionError(null);
     setIsProcessingRecording(false);
+    setHasLeftMeeting(false); // Reset when meeting code changes
+    liveKitRoomRef.current = null; // Clear room ref when meeting code changes
   }, [meetingCode]);
 
   // Fetch meeting details
@@ -141,7 +153,10 @@ const MeetingRoomPage = () => {
     });
 
     socket.on('disconnect', () => {
-      setIsConnected(false);
+      // Only update if user hasn't explicitly left (to avoid race conditions)
+      if (!hasLeftMeeting) {
+        setIsConnected(false);
+      }
     });
 
     // Handle joined meeting confirmation
@@ -170,22 +185,40 @@ const MeetingRoomPage = () => {
 
     // Handle user joined event
     const handleUserJoined = (data: ParticipantEvent) => {
+      if (hasLeftMeeting) return; // Don't update if user has left
       setParticipantEvents((prev) => [...prev, data]);
     };
 
     // Handle user left event
     const handleUserLeft = (data: ParticipantEvent) => {
+      if (hasLeftMeeting) return; // Don't update if user has left
       setParticipantEvents((prev) => [...prev, data]);
     };
 
     // Handle message received
     const handleMessageReceived = (data: ChatMessage) => {
+      if (hasLeftMeeting) return; // Don't update if user has left
       setChatMessages((prev) => [...prev, data]);
     };
 
     // Handle reaction received
     const handleReactionReceived = (data: ReactionEvent) => {
+      if (hasLeftMeeting) return; // Don't update if user has left
       setReactions((prev) => [...prev, data]);
+    };
+
+    // Handle raise hand event
+    const handleRaiseHandUpdated = (data: RaiseHandEvent) => {
+      if (hasLeftMeeting) return; // Don't update if user has left
+      setRaisedHands((prev) => {
+        const newSet = new Set(prev);
+        if (data.isRaised) {
+          newSet.add(data.userName);
+        } else {
+          newSet.delete(data.userName);
+        }
+        return newSet;
+      });
     };
 
     // Subscribe to events
@@ -194,6 +227,7 @@ const MeetingRoomPage = () => {
     onSocketEvent('user-left', handleUserLeft);
     onSocketEvent('message-received', handleMessageReceived);
     onSocketEvent('reaction-received', handleReactionReceived);
+    onSocketEvent('raise-hand-updated', handleRaiseHandUpdated);
 
     // Cleanup on unmount
     return () => {
@@ -205,9 +239,10 @@ const MeetingRoomPage = () => {
       offSocketEvent('user-left', handleUserLeft);
       offSocketEvent('message-received', handleMessageReceived);
       offSocketEvent('reaction-received', handleReactionReceived);
+      offSocketEvent('raise-hand-updated', handleRaiseHandUpdated);
       disconnectSocket();
     };
-  }, [meetingCode, userName, showNameInput]);
+  }, [meetingCode, userName, showNameInput, hasLeftMeeting]);
 
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,6 +253,7 @@ const MeetingRoomPage = () => {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
+    if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
     if (messageInput.trim() && meetingCode && userName) {
       sendMessage(meetingCode, messageInput.trim(), userName);
       setMessageInput('');
@@ -225,6 +261,7 @@ const MeetingRoomPage = () => {
   };
 
   const handleSendReaction = (reaction: string) => {
+    if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
     if (meetingCode && userName) {
       sendReaction(meetingCode, reaction, userName);
     }
@@ -253,23 +290,67 @@ const MeetingRoomPage = () => {
   };
 
   const handleToggleChat = () => {
+    if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
     setIsChatOpen((prev) => !prev);
   };
 
   const handleToggleReactions = () => {
+    if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
     setIsReactionsOpen((prev) => !prev);
   };
 
-  const handleEndOrLeaveMeeting = async () => {
+  const handleToggleParticipants = () => {
+    if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
+    setIsParticipantsOpen((prev) => !prev);
+  };
+
+  const handleEndOrLeaveMeeting = () => {
     if (isProcessingRecording) return;
 
+    // STEP 1: Mark that user has left FIRST - this will immediately hide all UI
+    setHasLeftMeeting(true);
+
+    // STEP 2: Set connection status to disconnected immediately
+    setIsConnected(false);
+
+    // STEP 3: Clear all meeting-related state immediately
+    setChatMessages([]);
+    setReactions([]);
+    setRaisedHands(new Set());
+    setParticipantEvents([]);
+    setMessageInput('');
+    
+    // STEP 4: Close all overlays immediately
+    setIsChatOpen(false);
+    setIsReactionsOpen(false);
+    setIsParticipantsOpen(false);
+
+    // STEP 5: Clear LiveKit connection immediately (this will cause VideoRoom to unmount)
+    setLiveKitToken(null);
+    setLiveKitUrl(null);
+
+    // STEP 6: Disconnect from LiveKit room (fire and forget - don't await)
+    const room = liveKitRoomRef.current;
+    if (room) {
+      room.disconnect().catch((error: any) => {
+        console.error('Error disconnecting from LiveKit room:', error);
+      });
+      liveKitRoomRef.current = null;
+    }
+
+    // STEP 7: Leave socket meeting and disconnect immediately
     if (meetingCode && userName) {
       leaveMeeting(meetingCode, userName);
     }
+    // Disconnect socket immediately - this will trigger the disconnect event
     disconnectSocket();
-    setLiveKitToken(null);
-    setLiveKitUrl(null);
-    await processTranscription();
+
+    // STEP 8: Process transcription in background (don't block)
+    processTranscription().catch((error) => {
+      console.error('Error processing transcription:', error);
+    });
+
+    // STEP 9: Clear meeting state
     dispatch(clearMeeting());
   };
 
@@ -487,10 +568,10 @@ const MeetingRoomPage = () => {
           <h2 className="text-2xl font-semibold tracking-tight">{meeting.title}</h2>
           <p className="text-sm text-slate-400">
             Meeting Code: <span className="font-mono">{meeting.meetingCode}</span>
-            {isConnected && (
+            {!hasLeftMeeting && isConnected && (
               <span className="ml-2 text-green-400">● Connected</span>
             )}
-            {!isConnected && (
+            {(hasLeftMeeting || !isConnected) && (
               <span className="ml-2 text-red-400">● Disconnected</span>
             )}
           </p>
@@ -517,64 +598,99 @@ const MeetingRoomPage = () => {
         </div>
       )}
 
-      {/* Full screen video room */}
-      <div className="relative h-[calc(100vh-12rem)] w-full">
-        {isLoadingToken ? (
-          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-            <div className="text-center text-sm text-slate-400">
-              <p>Connecting to video room...</p>
+      {/* Full screen video room - Hide completely if user has left */}
+      {!hasLeftMeeting ? (
+        <div className="relative h-[calc(100vh-12rem)] w-full">
+          {isLoadingToken ? (
+            <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+              <div className="text-center text-sm text-slate-400">
+                <p>Connecting to video room...</p>
+              </div>
             </div>
-          </div>
-        ) : liveKitError ? (
-          <div className="flex h-full items-center justify-center rounded-lg border border-red-700 bg-red-900/20">
-            <div className="text-center text-sm text-red-300">
-              <p className="font-medium">Video Connection Error</p>
-              <p className="mt-1 text-xs">{liveKitError}</p>
-              <p className="mt-2 text-xs text-slate-400">
-                Chat and reactions are still available
-              </p>
+          ) : liveKitError ? (
+            <div className="flex h-full items-center justify-center rounded-lg border border-red-700 bg-red-900/20">
+              <div className="text-center text-sm text-red-300">
+                <p className="font-medium">Video Connection Error</p>
+                <p className="mt-1 text-xs">{liveKitError}</p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Chat and reactions are still available
+                </p>
+              </div>
             </div>
-          </div>
-        ) : liveKitToken && liveKitUrl ? (
-          <VideoRoom
-            token={liveKitToken}
-            serverUrl={liveKitUrl}
-            meetingCode={meetingCode!}
-            userName={userName}
-            initialMicEnabled={initialMicEnabled}
-            initialCameraEnabled={initialCameraEnabled}
-            onDisconnect={() => {
-              setLiveKitToken(null);
-              setLiveKitUrl(null);
-            }}
-            onLeave={handleEndOrLeaveMeeting}
-            onToggleChat={handleToggleChat}
-            onToggleReactions={handleToggleReactions}
-            isChatOpen={isChatOpen}
-            isReactionsOpen={isReactionsOpen}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
-            <div className="text-center text-sm text-slate-400">
-              <p>Preparing video room...</p>
+          ) : liveKitToken && liveKitUrl ? (
+            <VideoRoom
+              key={`room-${liveKitToken}`}
+              token={liveKitToken}
+              serverUrl={liveKitUrl}
+              meetingCode={meetingCode!}
+              userName={userName}
+              initialMicEnabled={initialMicEnabled}
+              initialCameraEnabled={initialCameraEnabled}
+              onDisconnect={() => {
+                // Mark that user has left
+                setHasLeftMeeting(true);
+                
+                // Clear all meeting-related state
+                setChatMessages([]);
+                setReactions([]);
+                setRaisedHands(new Set());
+                setParticipantEvents([]);
+                setMessageInput('');
+                
+                // Close all overlays
+                setIsChatOpen(false);
+                setIsReactionsOpen(false);
+                setIsParticipantsOpen(false);
+                
+                // Clear LiveKit connection
+                setLiveKitToken(null);
+                setLiveKitUrl(null);
+                liveKitRoomRef.current = null;
+              }}
+              onLeave={handleEndOrLeaveMeeting}
+              onRoomReady={(room) => {
+                liveKitRoomRef.current = room;
+              }}
+              onToggleChat={liveKitToken && liveKitUrl ? handleToggleChat : undefined}
+              onToggleReactions={liveKitToken && liveKitUrl ? handleToggleReactions : undefined}
+              onToggleParticipants={liveKitToken && liveKitUrl ? handleToggleParticipants : undefined}
+              isChatOpen={isChatOpen}
+              isReactionsOpen={isReactionsOpen}
+              isParticipantsOpen={isParticipantsOpen}
+              raisedHands={raisedHands}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">
+              <div className="text-center text-sm text-slate-400">
+                <p>Preparing video room...</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Chat and Reactions Overlay */}
-        <ChatReactionsOverlay
-          isChatOpen={isChatOpen}
-          isReactionsOpen={isReactionsOpen}
-          chatMessages={chatMessages}
-          reactions={reactions}
-          messageInput={messageInput}
-          onMessageInputChange={setMessageInput}
-          onSendMessage={handleSendMessage}
-          onSendReaction={handleSendReaction}
-          commonReactions={commonReactions}
-          userName={userName}
-        />
-      </div>
+          {/* Chat and Reactions Overlay - Only show if user is still connected and hasn't left */}
+          {liveKitToken && liveKitUrl && !hasLeftMeeting && (
+            <ChatReactionsOverlay
+              isChatOpen={isChatOpen}
+              isReactionsOpen={isReactionsOpen}
+              chatMessages={chatMessages}
+              reactions={reactions}
+              messageInput={messageInput}
+              onMessageInputChange={setMessageInput}
+              onSendMessage={handleSendMessage}
+              onSendReaction={handleSendReaction}
+              commonReactions={commonReactions}
+              userName={userName}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="relative h-[calc(100vh-12rem)] w-full flex items-center justify-center">
+          <div className="text-center text-slate-400">
+            <p className="text-lg font-medium">You have left the meeting</p>
+            <p className="text-sm mt-2">Processing recording...</p>
+          </div>
+        </div>
+      )}
 
       <TranscriptViewer
         transcriptText={transcriptText}

@@ -180,3 +180,20 @@ export function offSocketEvent<T = unknown>(
   }
 }
 
+/**
+ * Raise or lower hand in a meeting
+ * @param meetingCode - The meeting code
+ * @param userName - The user's name
+ * @param isRaised - Whether the hand is raised or lowered
+ */
+export function raiseHand(meetingCode: string, userName: string, isRaised: boolean): void {
+  if (socket && socket.connected) {
+    socket.emit('raise-hand', {
+      meetingCode,
+      userName,
+      isRaised,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+

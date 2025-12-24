@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface ChatReactionsOverlayProps {
   isChatOpen: boolean;
@@ -27,6 +27,8 @@ const ChatReactionsOverlay = ({
 }: ChatReactionsOverlayProps) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const reactionsEndRef = useRef<HTMLDivElement>(null);
+  const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -42,6 +44,33 @@ const ChatReactionsOverlay = ({
     }
   }, [reactions, isReactionsOpen]);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuIndex(null);
+      }
+    };
+
+    if (openMenuIndex !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [openMenuIndex]);
+
+  // Copy message to clipboard
+  const handleCopyMessage = async (message: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setOpenMenuIndex(null);
+      // Optional: Show a toast notification here
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  };
+
   // Don't render if both are closed
   if (!isChatOpen && !isReactionsOpen) {
     return null;
@@ -51,7 +80,7 @@ const ChatReactionsOverlay = ({
 
   return (
     <div
-      className={`fixed right-0 top-0 z-40 h-full w-80 bg-slate-900/95 backdrop-blur-sm transition-all duration-300 ${
+      className={`fixed right-0 top-0 z-30 h-full w-80 bg-slate-900/95 backdrop-blur-sm transition-all duration-300 border-l border-slate-700 ${
         isChatOpen || isReactionsOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
@@ -71,12 +100,60 @@ const ChatReactionsOverlay = ({
                 <p className="text-xs text-slate-500">No messages yet</p>
               ) : (
                 chatMessages.map((msg, idx) => (
-                  <div key={idx} className="rounded-lg bg-slate-800/40 p-2">
-                    <p className="text-sm text-slate-200">
-                      <span className="font-medium text-slate-300">{msg.sender}</span>
-                      {' : '}
-                      <span>{msg.message}</span>
-                    </p>
+                  <div key={idx} className="group relative rounded-lg bg-slate-800/40 p-2 hover:bg-slate-800/60 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm text-slate-200 flex-1">
+                        <span className="font-medium text-slate-300">{msg.sender}</span>
+                        {' : '}
+                        <span>{msg.message}</span>
+                      </p>
+                      <div className="relative" ref={idx === openMenuIndex ? menuRef : null}>
+                        <button
+                          onClick={() => setOpenMenuIndex(openMenuIndex === idx ? null : idx)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-slate-700/50"
+                          aria-label="Message options"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4 text-slate-400"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+                            />
+                          </svg>
+                        </button>
+                        {openMenuIndex === idx && (
+                          <div className="absolute right-0 top-8 z-50 min-w-[120px] rounded-lg border border-slate-700 bg-slate-800 shadow-lg">
+                            <button
+                              onClick={() => handleCopyMessage(msg.message, idx)}
+                              className="w-full px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 transition-colors rounded-t-lg flex items-center gap-2"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                />
+                              </svg>
+                              Copy
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
