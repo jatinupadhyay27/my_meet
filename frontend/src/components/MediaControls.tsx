@@ -55,6 +55,8 @@ const MediaControls = ({
   const [isSharingLoading, setIsSharingLoading] = useState(false);
   const [initialPreferencesApplied, setInitialPreferencesApplied] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
+  const [screenShareError, setScreenShareError] = useState<string | null>(null);
+  const [currentSharer, setCurrentSharer] = useState<string | null>(null);
   
   // Track if we've manually set the state (to prevent sync from overriding)
   const [stateManuallySet, setStateManuallySet] = useState(false);
@@ -553,11 +555,111 @@ const MediaControls = ({
     }
   };
 
+  // Check if someone else is currently sharing their screen
+  const checkIfSomeoneElseIsSharing = (): { isSharing: boolean; sharerName: string | null } => {
+    if (!room) return { isSharing: false, sharerName: null };
+
+    // Check all remote participants
+    const remoteParticipants = Array.from(room.remoteParticipants.values());
+    
+    for (const participant of remoteParticipants) {
+      const videoTracks = Array.from(participant.videoTrackPublications.values());
+      const screenTrack = videoTracks.find((pub) => pub.source === Track.Source.ScreenShare);
+      
+      if (screenTrack && screenTrack.track) {
+        const videoTrack = screenTrack.track;
+        const isTrackDisabled =
+          (videoTrack as any)?.mediaStreamTrack?.enabled === false ||
+          (videoTrack as any)?.track?.enabled === false ||
+          (videoTrack as any)?.enabled === false;
+        
+        // Check if screen share is active (not muted, not disabled)
+        if (!screenTrack.isMuted && !isTrackDisabled) {
+          return { isSharing: true, sharerName: participant.identity || 'Someone' };
+        }
+      }
+    }
+    
+    return { isSharing: false, sharerName: null };
+  };
+
+  // Monitor screen sharing status of other participants
+  useEffect(() => {
+    if (!room) return;
+
+    const updateScreenShareStatus = () => {
+      const { isSharing, sharerName } = checkIfSomeoneElseIsSharing();
+      setCurrentSharer(sharerName);
+      
+      // Clear error if no one is sharing
+      if (!isSharing) {
+        setScreenShareError(null);
+      }
+    };
+
+    // Initial check
+    updateScreenShareStatus();
+
+    // Listen for track changes
+    const handleTrackPublished = () => updateScreenShareStatus();
+    const handleTrackUnpublished = () => updateScreenShareStatus();
+    const handleTrackMuted = () => updateScreenShareStatus();
+    const handleTrackUnmuted = () => updateScreenShareStatus();
+
+    // Listen to all participants
+    const handleParticipantConnected = (participant: any) => {
+      // Listen to new participant's track events
+      participant.on('trackPublished', handleTrackPublished);
+      participant.on('trackUnpublished', handleTrackUnpublished);
+      participant.on('trackMuted', handleTrackMuted);
+      participant.on('trackUnmuted', handleTrackUnmuted);
+      updateScreenShareStatus();
+    };
+    
+    const handleParticipantDisconnected = () => updateScreenShareStatus();
+
+    room.on('trackPublished', handleTrackPublished);
+    room.on('trackUnpublished', handleTrackUnpublished);
+    room.on('trackMuted', handleTrackMuted);
+    room.on('trackUnmuted', handleTrackUnmuted);
+    room.on('participantConnected', handleParticipantConnected);
+    room.on('participantDisconnected', handleParticipantDisconnected);
+
+    // Also listen to existing remote participants
+    const remoteParticipants = Array.from(room.remoteParticipants.values());
+    remoteParticipants.forEach((participant) => {
+      participant.on('trackPublished', handleTrackPublished);
+      participant.on('trackUnpublished', handleTrackUnpublished);
+      participant.on('trackMuted', handleTrackMuted);
+      participant.on('trackUnmuted', handleTrackUnmuted);
+    });
+
+    return () => {
+      room.off('trackPublished', handleTrackPublished);
+      room.off('trackUnpublished', handleTrackUnpublished);
+      room.off('trackMuted', handleTrackMuted);
+      room.off('trackUnmuted', handleTrackUnmuted);
+      room.off('participantConnected', handleParticipantConnected);
+      room.off('participantDisconnected', handleParticipantDisconnected);
+      
+      // Clean up listeners from all participants
+      const allParticipants = Array.from(room.remoteParticipants.values());
+      allParticipants.forEach((participant) => {
+        participant.off('trackPublished', handleTrackPublished);
+        participant.off('trackUnpublished', handleTrackUnpublished);
+        participant.off('trackMuted', handleTrackMuted);
+        participant.off('trackUnmuted', handleTrackUnmuted);
+      });
+    };
+  }, [room]);
+
   // Toggle screen sharing
   const handleToggleScreenShare = async () => {
     if (!localParticipant || !room) return;
 
     setIsSharingLoading(true);
+    setScreenShareError(null); // Clear any previous errors
+    
     try {
       if (isScreenSharing) {
         // Stop screen sharing
@@ -578,6 +680,15 @@ const MediaControls = ({
           }
         }
       } else {
+        // Check if someone else is already sharing
+        const { isSharing, sharerName } = checkIfSomeoneElseIsSharing();
+        
+        if (isSharing && sharerName) {
+          setScreenShareError(`${sharerName} is sharing their screen. You cannot share your screen at this time.`);
+          setIsSharingLoading(false);
+          return;
+        }
+
         // Start screen sharing
         try {
           const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -618,15 +729,16 @@ const MediaControls = ({
         } catch (error: any) {
           if (error.name === 'NotAllowedError') {
             console.error('Screen sharing permission denied');
-            alert('Screen sharing permission was denied. Please allow screen sharing in your browser settings.');
+            setScreenShareError('Screen sharing permission was denied. Please allow screen sharing in your browser settings.');
           } else {
             console.error('Failed to start screen sharing:', error);
-            alert('Failed to start screen sharing. Please try again.');
+            setScreenShareError('Failed to start screen sharing. Please try again.');
           }
         }
       }
     } catch (error) {
       console.error('Screen share toggle error:', error);
+      setScreenShareError('An error occurred while toggling screen sharing.');
     } finally {
       setIsSharingLoading(false);
     }
@@ -654,7 +766,76 @@ const MediaControls = ({
   }
 
   return (
-    <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2 transform">
+    <>
+      {/* Screen Share Error Message - Top Center */}
+      {screenShareError && (
+        <div className="absolute top-4 left-1/2 z-50 -translate-x-1/2 transform animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 rounded-lg border border-red-500/50 bg-red-600/95 px-4 py-3 shadow-lg backdrop-blur-sm max-w-md">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 text-white flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <p className="text-sm font-medium text-white">{screenShareError}</p>
+            <button
+              onClick={() => setScreenShareError(null)}
+              className="ml-auto flex-shrink-0 text-white hover:text-red-200 transition-colors"
+              aria-label="Close error message"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Current Sharer Info - Top Center (when someone else is sharing) */}
+      {currentSharer && !isScreenSharing && (
+        <div className="absolute top-4 left-1/2 z-50 -translate-x-1/2 transform animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 rounded-lg border border-blue-500/50 bg-blue-600/95 px-4 py-3 shadow-lg backdrop-blur-sm">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 text-white flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+            <p className="text-sm font-medium text-white">
+              <span className="font-semibold">{currentSharer}</span> is sharing their screen
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2 transform">
       <div className="flex items-center gap-3 rounded-full border border-slate-700 bg-slate-900/95 px-4 py-3 shadow-lg backdrop-blur-sm">
         {/* Microphone Toggle */}
         <button
@@ -936,6 +1117,7 @@ const MediaControls = ({
         </button>
       </div>
     </div>
+    </>
   );
 };
 
