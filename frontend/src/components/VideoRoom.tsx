@@ -44,6 +44,7 @@ interface VideoRoomProps {
   isParticipantsOpen?: boolean;
   raisedHands?: Set<string>;
   onRoomReady?: (room: any) => void;
+  unreadMessageCount?: number;
 }
 
 const VideoRoom = ({ 
@@ -62,7 +63,8 @@ const VideoRoom = ({
   isReactionsOpen,
   isParticipantsOpen,
   raisedHands = new Set(),
-  onRoomReady
+  onRoomReady,
+  unreadMessageCount = 0
 }: VideoRoomProps) => {
   // Handle connection errors
   const handleError = (err: Error) => {
@@ -106,6 +108,7 @@ const VideoRoom = ({
           isChatOpen={isChatOpen}
           isReactionsOpen={isReactionsOpen}
           isParticipantsOpen={isParticipantsOpen}
+          unreadMessageCount={unreadMessageCount}
         />
         {onToggleParticipants && token && (
           <ParticipantsList

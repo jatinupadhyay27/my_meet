@@ -74,6 +74,7 @@ const MeetingRoomPage = () => {
   const [isReactionsOpen, setIsReactionsOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   
   // LiveKit state
   const [liveKitToken, setLiveKitToken] = useState<string | null>(null);
@@ -98,6 +99,13 @@ const MeetingRoomPage = () => {
     reactionsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [reactions]);
 
+  // Reset unread message count when chat is opened
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadMessageCount(0);
+    }
+  }, [isChatOpen]);
+
   useEffect(() => {
     hasRequestedTranscription.current = false;
     setTranscriptText(null);
@@ -106,6 +114,7 @@ const MeetingRoomPage = () => {
     setIsProcessingRecording(false);
     setHasLeftMeeting(false); // Reset when meeting code changes
     liveKitRoomRef.current = null; // Clear room ref when meeting code changes
+    setUnreadMessageCount(0); // Reset unread count when meeting code changes
   }, [meetingCode]);
 
   // Fetch meeting details
@@ -199,6 +208,11 @@ const MeetingRoomPage = () => {
     const handleMessageReceived = (data: ChatMessage) => {
       if (hasLeftMeeting) return; // Don't update if user has left
       setChatMessages((prev) => [...prev, data]);
+      
+      // Increment unread count if message is from someone else and chat is closed
+      if (data.sender !== userName && !isChatOpen) {
+        setUnreadMessageCount((prev) => prev + 1);
+      }
     };
 
     // Handle reaction received
@@ -291,7 +305,14 @@ const MeetingRoomPage = () => {
 
   const handleToggleChat = () => {
     if (hasLeftMeeting || !liveKitToken || !liveKitUrl) return;
-    setIsChatOpen((prev) => !prev);
+    setIsChatOpen((prev) => {
+      const newState = !prev;
+      // Reset unread count when opening chat
+      if (newState) {
+        setUnreadMessageCount(0);
+      }
+      return newState;
+    });
   };
 
   const handleToggleReactions = () => {
@@ -319,6 +340,7 @@ const MeetingRoomPage = () => {
     setRaisedHands(new Set());
     setParticipantEvents([]);
     setMessageInput('');
+    setUnreadMessageCount(0);
     
     // STEP 4: Close all overlays immediately
     setIsChatOpen(false);
@@ -636,6 +658,7 @@ const MeetingRoomPage = () => {
                 setRaisedHands(new Set());
                 setParticipantEvents([]);
                 setMessageInput('');
+                setUnreadMessageCount(0);
                 
                 // Close all overlays
                 setIsChatOpen(false);
@@ -658,6 +681,7 @@ const MeetingRoomPage = () => {
               isReactionsOpen={isReactionsOpen}
               isParticipantsOpen={isParticipantsOpen}
               raisedHands={raisedHands}
+              unreadMessageCount={unreadMessageCount}
             />
           ) : (
             <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-700 bg-slate-800/40">

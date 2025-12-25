@@ -30,6 +30,7 @@ interface MediaControlsProps {
   isChatOpen?: boolean;
   isReactionsOpen?: boolean;
   isParticipantsOpen?: boolean;
+  unreadMessageCount?: number;
 }
 
 const MediaControls = ({ 
@@ -43,7 +44,8 @@ const MediaControls = ({
   onToggleParticipants,
   isChatOpen = false,
   isReactionsOpen = false,
-  isParticipantsOpen = false
+  isParticipantsOpen = false,
+  unreadMessageCount = 0
 }: MediaControlsProps) => {
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
@@ -987,118 +989,164 @@ const MediaControls = ({
 
         {/* Chat Toggle */}
         {onToggleChat && (
-          <button
-            onClick={onToggleChat}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
-              isChatOpen
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title={isChatOpen ? 'Close chat' : 'Open chat'}
-            aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+          <div className="relative group">
+            <button
+              onClick={onToggleChat}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+                isChatOpen
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-slate-700 text-white hover:bg-slate-600'
+              }`}
+              aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              {unreadMessageCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs font-semibold text-white">
+                  {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                </span>
+              )}
+            </button>
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 transform opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none z-50">
+              <div className="rounded bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg whitespace-nowrap border border-slate-700">
+                {isChatOpen ? 'Close chat' : 'Open chat'}
+                {unreadMessageCount > 0 && ` (${unreadMessageCount} new)`}
+              </div>
+              <div className="absolute left-1/2 top-full -translate-x-1/2 -mt-px">
+                <div className="border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Reactions Toggle */}
         {onToggleReactions && (
-          <button
-            onClick={onToggleReactions}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
-              isReactionsOpen
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title={isReactionsOpen ? 'Close reactions' : 'Open reactions'}
-            aria-label={isReactionsOpen ? 'Close reactions' : 'Open reactions'}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+          <div className="relative group">
+            <button
+              onClick={onToggleReactions}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+                isReactionsOpen
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-slate-700 text-white hover:bg-slate-600'
+              }`}
+              aria-label={isReactionsOpen ? 'Close reactions' : 'Open reactions'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 transform opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none z-50">
+              <div className="rounded bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg whitespace-nowrap border border-slate-700">
+                {isReactionsOpen ? 'Close reactions' : 'Open reactions'}
+              </div>
+              <div className="absolute left-1/2 top-full -translate-x-1/2 -mt-px">
+                <div className="border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Participants Toggle */}
         {onToggleParticipants && (
-          <button
-            onClick={onToggleParticipants}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
-              isParticipantsOpen
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title={isParticipantsOpen ? 'Close participants' : 'Open participants'}
-            aria-label={isParticipantsOpen ? 'Close participants' : 'Open participants'}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+          <div className="relative group">
+            <button
+              onClick={onToggleParticipants}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+                isParticipantsOpen
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-slate-700 text-white hover:bg-slate-600'
+              }`}
+              aria-label={isParticipantsOpen ? 'Close participants' : 'Open participants'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-              />
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                />
+              </svg>
+            </button>
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 transform opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none z-50">
+              <div className="rounded bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg whitespace-nowrap border border-slate-700">
+                {isParticipantsOpen ? 'Close participants' : 'Open participants'}
+              </div>
+              <div className="absolute left-1/2 top-full -translate-x-1/2 -mt-px">
+                <div className="border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Raise Hand Button */}
         {meetingCode && userName && (
-          <button
-            onClick={handleToggleRaiseHand}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
-              isHandRaised
-                ? 'bg-yellow-600 text-white hover:bg-yellow-700'
-                : 'bg-slate-700 text-white hover:bg-slate-600'
-            }`}
-            title={isHandRaised ? 'Lower hand' : 'Raise hand'}
-            aria-label={isHandRaised ? 'Lower hand' : 'Raise hand'}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+          <div className="relative group">
+            <button
+              onClick={handleToggleRaiseHand}
+              className={`flex h-12 w-12 items-center justify-center rounded-full transition-all ${
+                isHandRaised
+                  ? 'bg-yellow-600 text-white hover:bg-yellow-700'
+                  : 'bg-slate-700 text-white hover:bg-slate-600'
+              }`}
+              aria-label={isHandRaised ? 'Lower hand' : 'Raise hand'}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
-              />
-            </svg>
-          </button>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"
+                />
+              </svg>
+            </button>
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 transform opacity-0 transition-opacity duration-200 group-hover:opacity-100 pointer-events-none z-50">
+              <div className="rounded bg-slate-800 px-3 py-1.5 text-xs text-white shadow-lg whitespace-nowrap border border-slate-700">
+                {isHandRaised ? 'Lower hand' : 'Raise hand'}
+              </div>
+              <div className="absolute left-1/2 top-full -translate-x-1/2 -mt-px">
+                <div className="border-4 border-transparent border-t-slate-800"></div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Divider */}
